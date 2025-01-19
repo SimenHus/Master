@@ -4,6 +4,30 @@ from common import *
 
 
 
+class CustomFactor(gtsam.CustomFactor):
+    def __init__(self, *args, keys: list = [], noise_model: gtsam.noiseModel = None, **kwargs) -> None:
+        super().__init__(noise_model, keys, self.evaluateError)
+        self.set_attributes(args)
+        print(args)
+
+
+    def set_attributes(self, data: dict) -> None:
+        properties = type(self).__dict__
+        print(properties)
+        for key, value in data.items():
+            if key in properties:
+                self.__setattr__(key, value)
+
+
+
+class GNSSFactor(CustomFactor):
+    measurement: 'np.ndarray[3]'
+
+    def evaluateError(self, _, values: gtsam.Values, H: gtsam.JacobianVector | None = None) -> 'np.ndarray[n]':
+        return np.array([0])
+
+
+
 class DistanceFactor2D(gtsam.CustomFactor):
     def __init__(self, key, noise_model, measured_distance, known_point):
         # Call parent constructor
