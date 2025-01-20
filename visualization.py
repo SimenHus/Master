@@ -17,9 +17,9 @@ def draw_covariance2D(ax, pose, cov) -> None:
     ax.add_patch(e1) # Add ellipse to ax
 
    
-def plot_graph(graph: gtsam.NonlinearFactorGraph, result: gtsam.Values, draw_cov=True) -> None:
+def plot_graph(graph: gtsam.NonlinearFactorGraph, result: gtsam.Values, draw_cov=True, ax = None) -> None:
 
-    fig, ax = plt.subplots()
+    if not ax: fig, ax = plt.subplots()
 
     marginals = gtsam.Marginals(graph, result)
     poses = gtsam.utilities.allPose2s(result)
@@ -37,9 +37,6 @@ def plot_graph(graph: gtsam.NonlinearFactorGraph, result: gtsam.Values, draw_cov
     ax.plot(origins[:, 0], origins[:, 1], '-o')
 
 
-    # plt.xlim([-0.5, 5])
-    # plt.ylim([-2, 2])
-    plt.grid()
-    plt.show()
-
-
+    # ax.xlim([-0.5, 5])
+    # ax.ylim([-2, 2])
+    ax.grid()
