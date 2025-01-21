@@ -1,19 +1,58 @@
 from common import *
 from Simulation import Planar3D, Planar2D
 from util.noise import apply_noise_pose2
-from util.SLAM import determine_loop_closure
 from visualization import plot_graph
-from Sensor import NoisyOdom2D, NoisyMeasurement2D
-from Factor import GNSSFactor
 
 
-ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas(NoisyOdom2D.std_dev_list())
-PRIOR_NOISE = gtsam.noiseModel.Diagonal.Sigmas(NoisyOdom2D.std_dev_list())
+def determine_loop_closure(odom: np.ndarray, current_estimate: gtsam.Values,
+    key: int, xy_tol=0.6, theta_tol=17) -> int:
+    """Simple brute force approach which iterates through previous states
+    and checks for loop closure.
+
+    Args:
+        odom: Vector representing noisy odometry (x, y, theta) measurement in the body frame.
+        current_estimate: The current estimates computed by iSAM2.
+        key: Key corresponding to the current state estimate of the robot.
+        xy_tol: Optional argument for the x-y measurement tolerance, in meters.
+        theta_tol: Optional argument for the theta measurement tolerance, in degrees.
+    Returns:
+        k: The key of the state which is helping add the loop closure constraint.
+            If loop closure is not found, then None is returned.
+    """
+    if current_estimate:
+        t = odom.translation()
+        r = odom.rotation().theta()
+
+        prev_est = current_estimate.atPose2(key+1)
+        rotated_odom = prev_est.rotation().matrix() @ t
+        curr_xy = np.array([prev_est.x() + rotated_odom[0],
+                            prev_est.y() + rotated_odom[1]])
+        curr_theta = prev_est.theta() + r
+        for k in range(1, key+1):
+            pose_xy = np.array([current_estimate.atPose2(k).x(),
+                                current_estimate.atPose2(k).y()])
+            pose_theta = current_estimate.atPose2(k).theta()
+            if (abs(pose_xy - curr_xy) <= xy_tol).all() and \
+                (abs(pose_theta - curr_theta) <= theta_tol*np.pi/180):
+                    return k
+
+
+prior_xy_sigma = 0.3 # [m]
+prior_theta_sigma = 5 # [deg]
+odometry_xy_sigma = 0.2 # [m]
+odometry_theta_sigma = 5 # [deg]
+
+ODOMETRY_NOISE = gtsam.noiseModel.Diagonal.Sigmas([odometry_xy_sigma, odometry_xy_sigma, odometry_theta_sigma*np.pi/180])
+PRIOR_NOISE = gtsam.noiseModel.Diagonal.Sigmas(np.array([prior_xy_sigma, prior_xy_sigma, prior_theta_sigma*np.pi/180]))
 
 
 # Create the ground truth odometry measurements of the robot during the trajectory.
-trajectory = Planar2D(10)
+trajectory = Planar2D(5)
 true_odometry = trajectory.odometry
+
+
+# Corrupt the odometry measurements with gaussian noise to create noisy odometry measurements.
+odometry_measurements = [apply_noise_pose2(true_odom, ODOMETRY_NOISE) for true_odom in true_odometry]
 
 # Create iSAM2 parameters which can adjust the threshold necessary to force relinearization and how many
 # update calls are required to perform the relinearization.
@@ -21,7 +60,7 @@ parameters = gtsam.ISAM2Params()
 parameters.setRelinearizeThreshold(0.1)
 parameters.relinearizeSkip = 1
 # isam = gtsam.ISAM2(parameters)
-isam = gtsam.ISAM2() # Use standard parameters
+isam = gtsam.ISAM2()
 
 
 # Create a Nonlinear factor graph as well as the data structure to hold state estimates.
@@ -36,24 +75,11 @@ initial_estimate.insert(1, gtsam.Pose2(0.5, 0.0, 0.2))
 # Initialize the current estimate which is used during the incremental inference loop.
 current_estimate = initial_estimate
 
-
-fig, ax = plt.subplots()
-origins = np.array([node.translation() for node in trajectory.trajectory])
-
-
-measurement_sample_rate = 1
-
-for i, true_odom in enumerate(true_odometry):
-    # Corrupt the odometry measurements with gaussian noise to create noisy odometry measurements.
-    odometry_measurement = NoisyOdom2D.sample(true_odom)
+for i in range(len(true_odometry)):
 
     # Obtain the noisy odometry that is received by the robot and corrupted by gaussian noise.
-    noisy_odom_x, noisy_odom_y = odometry_measurement.translation()
-    noisy_odom_theta = odometry_measurement.rotation().theta()
-
-    if i % measurement_sample_rate == 0:
-        measurement = NoisyMeasurement2D.sample(trajectory.trajectory[i+1])
-        graph.push_back(GNSSFactor(measurement, [i+2], NoisyMeasurement2D.default_noise_model()))
+    noisy_odom_x, noisy_odom_y = odometry_measurements[i].translation()
+    noisy_odom_theta = odometry_measurements[i].rotation().theta()
 
     # Determine if there is loop closure based on the odometry measurement and the previous estimate of the state.
     # loop = determine_loop_closure(odometry_measurements[i], current_estimate, i, xy_tol=0.8, theta_tol=25)
@@ -80,11 +106,11 @@ for i, true_odom in enumerate(true_odometry):
     # Report all current state estimates from the iSAM2 optimzation.
     initial_estimate.clear()
 
-    ax.cla()
-    ax.grid()
-    plot_graph(graph, current_estimate, ax=ax)
-    ax.plot(origins[:i+2, 0], origins[:i+2, 1], '-o')
-    plt.pause(1)
 
+fig, ax = plt.subplots()
+plot_graph(graph, isam.calculateBestEstimate(), ax=ax)
+
+origins = np.array([node.translation() for node in trajectory.trajectory])
+ax.plot(origins[:, 0], origins[:, 1], '-o')
 
 plt.show()
