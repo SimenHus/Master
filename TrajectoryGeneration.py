@@ -6,17 +6,19 @@ from gtsam import Pose2, Point2, Rot2
 class TrajectoryGeneratorBaseClass:
     odometry: list
     trajectory: list
+    def __init__(self, n_nodes: int, prior = None) -> None:
+        self.prior = prior if prior is not None else self.pose()
+        self.n_nodes = n_nodes
+        self.trajectory = [self.prior] # Nodes in the trajectory
+        self.odometry = [] # Odometry between nodes
+        self.RNG = np.random.default_rng()
+        self.generate_trajectory()
 
 
 class Planar3D(TrajectoryGeneratorBaseClass):
-    
-    def __init__(self, n_nodes: int, prior: Pose3 = None) -> None:
-        prior = prior if prior is not None else Pose3()
-        self.n_nodes = n_nodes
-        self.trajectory = [prior] # Every node in the trajectory
-        self.odometry = [] # Odometry between nodes
-        self.RNG = np.random.default_rng()
-
+    pose = Pose3
+    point = Point3
+    rot = Rot3
 
     def generate_trajectory(self) -> None:
         for i in range(self.n_nodes):
@@ -31,14 +33,9 @@ class Planar3D(TrajectoryGeneratorBaseClass):
 
 
 class Planar2D(TrajectoryGeneratorBaseClass):
-    
-    def __init__(self, n_nodes: int, prior: Pose2 = None) -> None:
-        prior = prior if prior is not None else Pose2()
-        self.n_nodes = n_nodes
-        self.trajectory = [prior] # Every node in the trajectory
-        self.odometry = [] # Odometry between nodes
-        self.RNG = np.random.default_rng()
-        self.generate_trajectory()
+    pose = Pose2
+    point = Point2
+    rot = Rot2
 
     def generate_trajectory(self) -> None:
         for i in range(self.n_nodes):
