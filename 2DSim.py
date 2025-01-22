@@ -1,8 +1,8 @@
 from common import *
-from Simulation import Planar2D
+from simulation.TrajectoryGeneration import TrajectoryPlanar2D
 from visualization import plot_graph2D
-from Sensor import NoisyOdom2D, NoisyMeasurement2D
-from Factor import GNSSFactor
+from simulation.Measurements import NoisyOdom2D, NoisyMeasurement2D
+from factors.Factor import GNSSFactor
 
 
 ODOMETRY_NOISE = NoisyOdom2D.default_noise_model()
@@ -11,14 +11,14 @@ MEASUREMENT_NOISE = NoisyMeasurement2D.default_noise_model()
 
 
 # Create the ground truth odometry measurements of the robot during the trajectory.
-trajectory = Planar2D(10)
+trajectory = TrajectoryPlanar2D(10)
 true_odometry = trajectory.odometry
 
 # Create iSAM2 parameters which can adjust the threshold necessary to force relinearization and how many
 # update calls are required to perform the relinearization.
 parameters = gtsam.ISAM2Params()
 # parameters.setRelinearizeThreshold(0.1)
-# parameters.relinearizeSkip = 1
+parameters.relinearizeSkip = 1
 isam = gtsam.ISAM2(parameters)
 
 

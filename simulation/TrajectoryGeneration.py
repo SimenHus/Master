@@ -15,7 +15,7 @@ class TrajectoryGeneratorBaseClass:
         self.generate_trajectory()
 
 
-class Planar3D(TrajectoryGeneratorBaseClass):
+class TrajectoryPlanar3D(TrajectoryGeneratorBaseClass):
     pose = Pose3
     point = Point3
     rot = Rot3
@@ -32,7 +32,7 @@ class Planar3D(TrajectoryGeneratorBaseClass):
             self.odometry.append(odom)
 
 
-class Planar2D(TrajectoryGeneratorBaseClass):
+class TrajectoryPlanar2D(TrajectoryGeneratorBaseClass):
     pose = Pose2
     point = Point2
     rot = Rot2

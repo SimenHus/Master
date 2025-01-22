@@ -1,5 +1,0 @@
-
-
-
-class Planar3D:
-    
