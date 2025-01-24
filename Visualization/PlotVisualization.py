@@ -1,7 +1,11 @@
 
-from common import *
+import gtsam # https://gtbook.github.io/gtsam-examples/intro.html
+from gtsam import Point3, Point2, Pose3, Pose2, Rot3, Rot2
+import numpy as np
 
-
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+import mpl_toolkits.mplot3d.art3d as art3d
 
 def get_covariance_ellipsoid(pose: Pose3 | Pose2, cov, n_std: float = 2.0) -> np.ndarray:
     # Generate unit sphere

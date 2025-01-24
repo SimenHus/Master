@@ -1,5 +1,5 @@
 from gtsam import ISAM2Params, ISAM2
-from gtsam import NonlinearFactorGraph, Values
+from gtsam import NonlinearFactorGraph, Values, Symbol
 from gtsam import PriorFactorPose3, BetweenFactorPose3
 from gtsam import PriorFactorPose2, BetweenFactorPose2
 
