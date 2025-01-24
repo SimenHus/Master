@@ -3,14 +3,14 @@ import numpy as np
 from .RigidMotion import SE3, SE2
 
 
-class PositionParameters:
+class PositionParameter:
     def __init__(self, nonzero: bool = True, min: int = -2, max: int = 2) -> None:
         self.nonzero = nonzero
         self.min = min
         self.max = max
 
 
-class RotationParameters:
+class RotationParameter:
     def __init__(self, nonzero: bool = True, min: int = -2, max: int = 2) -> None:
         self.nonzero = nonzero
         self.min = min
@@ -33,15 +33,13 @@ class TrajectoryGeneratorBaseClass:
         for i in range(self.n_nodes):
             t = np.zeros(self.group.dim_t) # Define initial zero vector for positional odometry
 
-            position_parameters: list[PositionParameters] = [self.x_params, self.y_params, self.z_params] # Define vector of possible translation parameters
-            for j, param in enumerate(position_parameters): # Loop through parameters
+            for j, param in enumerate(self.position_parameters): # Loop through parameters
                 if param.nonzero: # Check if parameter should be nonzero
                     t[j] = self.RNG.integers(low=param.min, high=param.max).astype(np.float64) # Generate random nonzero value
             t = self.group.point(t) # Convert position vector to respective Point3 | Point2
 
-            rotation_parameters: list[RotationParameters] = [self.roll_params, self.pitch_params, self.yaw_params]
             r = np.zeros(self.group.dim_r) # Define initial zero vector for rotational odometry
-            for j, param in enumerate(rotation_parameters):
+            for j, param in enumerate(self.rotation_parameters):
                 if param.nonzero:
                     r[j] = self.RNG.integers(low=param.min, high=param.max).astype(np.float64)
             R = self.group.rot.Expmap(r)
@@ -53,14 +51,23 @@ class TrajectoryGeneratorBaseClass:
 
 class TrajectoryPlanar3D(TrajectoryGeneratorBaseClass):
     group = SE3
-    x_params = PositionParameters(nonzero=True)
-    y_params = PositionParameters(nonzero=True)
-    z_params = PositionParameters(nonzero=False)
-    roll_params = RotationParameters(nonzero=False)
-    pitch_params = RotationParameters(nonzero=False)
-    yaw_params = RotationParameters(nonzero=False)
+    x_params = PositionParameter(nonzero=True)
+    y_params = PositionParameter(nonzero=True)
+    z_params = PositionParameter(nonzero=False)
+    roll_params = RotationParameter(nonzero=False)
+    pitch_params = RotationParameter(nonzero=False)
+    yaw_params = RotationParameter(nonzero=False)
+
+    position_parameters = [x_params, y_params, z_params]
+    rotation_parameters = [roll_params, pitch_params, yaw_params]
 
 
 
 class TrajectoryPlanar2D(TrajectoryGeneratorBaseClass):
     group = SE2
+    x_params = PositionParameter(nonzero=True)
+    y_params = PositionParameter(nonzero=True)
+    roll_params = RotationParameter(nonzero=False)
+
+    position_parameters = [x_params, y_params]
+    rotation_parameters = [roll_params]

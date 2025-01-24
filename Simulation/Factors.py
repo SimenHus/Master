@@ -1,11 +1,11 @@
 
-from gtsam import CustomFactor, noiseModel
+from gtsam import CustomFactor, noiseModel, Pose3, Pose2
 import numpy as np
 
 class PositionFactor2D(CustomFactor):
-    def __init__(self, key: int, measurement: np.ndarray, noise_model: noiseModel = None):
+    def __init__(self, key: int, measurement: Pose2, noise_model: noiseModel = None):
         super().__init__(noise_model, [key], self.evaluateError)
-        self.measurement = measurement
+        self.measurement = measurement.translation()
 
     def evaluateError(self, _, values, H = None):
         T = values.atPose2(self.keys()[0])
@@ -23,9 +23,9 @@ class PositionFactor2D(CustomFactor):
     
 
 class PositionFactor3D(CustomFactor):
-    def __init__(self, key: int, measurement: np.ndarray, noise_model: noiseModel = None):
+    def __init__(self, key: int, measurement: Pose3, noise_model: noiseModel = None):
         super().__init__(noise_model, [key], self.evaluateError)
-        self.measurement = measurement
+        self.measurement = measurement.translation()
 
     def evaluateError(self, _, values, H = None):
         T = values.atPose3(self.keys()[0])
