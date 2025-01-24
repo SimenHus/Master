@@ -53,9 +53,9 @@ class TrajectoryGeneratorBaseClass:
 
 class TrajectoryPlanar3D(TrajectoryGeneratorBaseClass):
     group = SE3
-    x_params = PositionParameters(nonzero=False)
-    y_params = PositionParameters()
-    z_params = PositionParameters(nonzero=True)
+    x_params = PositionParameters(nonzero=True)
+    y_params = PositionParameters(nonzero=True)
+    z_params = PositionParameters(nonzero=False)
     roll_params = RotationParameters(nonzero=False)
     pitch_params = RotationParameters(nonzero=False)
     yaw_params = RotationParameters(nonzero=False)

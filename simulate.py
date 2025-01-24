@@ -24,7 +24,7 @@ def main() -> None:
     # opts = args.opts
     # print(opts)
 
-    steps = 10
+    steps = 30
     sim = Simulations.Planar3D(steps)
 
     fig = plt.figure()
@@ -36,8 +36,9 @@ def main() -> None:
     ax.set_xlabel('x')
     ax.set_ylabel('y')
     ax.set_zlabel('z')
+    ax.set_zlim([-5, 5])
 
-    plot_graph3D(sim.graph, sim.current_estimate, ax=ax, draw_cov=False)
+    plot_graph3D(sim.graph, sim.current_estimate, ax=ax, draw_cov=True)
     ax.plot(origins[:, 0], origins[:, 1], origins[:, 2], '-o')
 
     FactorGraphVisualization.draw_factor_graph(OUTPUT_FOLDER, sim.graph, sim.current_estimate)
