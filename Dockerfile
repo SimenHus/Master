@@ -1,8 +1,11 @@
 FROM ubuntu:22.04
 
+ENV DEBIAN_FRONTEND=noninteractive
+
 RUN apt-get -y update && apt-get -y install
 RUN apt-get -y install libboost-all-dev cmake
 RUN apt-get -y install libtbb-dev
+RUN apt-get -y install git
 RUN apt-get -y update && apt-get -y install
 
 WORKDIR /usr/src/
