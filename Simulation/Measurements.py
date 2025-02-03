@@ -9,7 +9,7 @@ from .NoiseModel import NoiseModel
 
 
 class SimulatedMeasurement:
-    def sample(true_state: Pose3 | Pose2, noise_model: NoiseModel):
+    def sample(true_state: Pose3 | Pose2, noise_model: NoiseModel) -> Pose3 | Pose2:
         group = GroupIdentifier.identify(true_state)
         cov = noise_model.default_noise_model().covariance()
 
@@ -17,12 +17,14 @@ class SimulatedMeasurement:
         r_dim = cov.shape[0] - t_dim
 
         translation_noise = np.zeros(t_dim)
-        rotation_noise = np.zeros(t_dim)
+        rotation_noise = np.zeros(r_dim) if r_dim > 0 else np.zeros(1)
 
-        if t_dim > 0: translation_noise = noise_model.RNG.multivariate_normal(np.zeros(t_dim), cov[:t_dim, :t_dim])
-        if r_dim > 0: rotation_noise = noise_model.RNG.multivariate_normal(np.zeros(r_dim), cov[t_dim:, t_dim:])
+        cov_t = cov[:t_dim, :t_dim]
+        cov_r = cov[t_dim:, t_dim:]
 
-
+        if t_dim > 0: translation_noise = noise_model.RNG.multivariate_normal(translation_noise, cov_t)
+        if r_dim > 0: rotation_noise = noise_model.RNG.multivariate_normal(rotation_noise, cov_r)
+        
         noisy_translation = group.point(*translation_noise)
         noisy_rotation = group.rot.Expmap(rotation_noise)
         

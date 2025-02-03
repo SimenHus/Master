@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from Simulation import Simulations
-from Visualization.PlotVisualization import plot_graph3D
+from Visualization.PlotVisualization import plot_graph2D
 from Visualization.GraphVisualization import FactorGraphVisualization
 
 import json
@@ -25,37 +25,21 @@ def main() -> None:
     # print(opts)
 
     steps = 30
-    sim = Simulations.Planar3D(steps)
+    sim = Simulations.Planar2D(steps)
 
     fig = plt.figure()
-    ax = fig.add_subplot(projection='3d')
+    ax = fig.add_subplot()
     origins = np.array([node.translation() for node in sim.trajectory.trajectory])
 
     sim.simulate_all()
     ax.grid()
     ax.set_xlabel('x')
     ax.set_ylabel('y')
-    ax.set_zlabel('z')
-    ax.set_zlim([-5, 5])
 
-    plot_graph3D(sim.graph, sim.current_estimate, ax=ax, draw_cov=True)
-    ax.plot(origins[:, 0], origins[:, 1], origins[:, 2], '-o')
+    plot_graph2D(sim.graph, sim.current_estimate, ax=ax, draw_cov=True)
+    ax.plot(origins[:, 0], origins[:, 1], '-o')
 
     FactorGraphVisualization.draw_factor_graph(OUTPUT_FOLDER, sim.graph, sim.current_estimate)
-
-    # for i in range(steps):
-    #     sim.simulate_step()
-    #     key = i + sim.key_start
-    #     ax.cla()
-    #     ax.grid()
-    #     ax.set_xlabel('x')
-    #     ax.set_ylabel('y')
-    #     ax.set_zlabel('z')
-    #     ax.set_zlim([-5, 5])
-    #     plot_graph3D(sim.graph, sim.current_estimate, ax=ax, draw_cov=False)
-    #     ax.plot(origins[:key + 1, 0], origins[:key + 1, 1], origins[:key + 1, 2], '-o')
-    #     plt.pause(1)
-
 
     plt.show()
 
