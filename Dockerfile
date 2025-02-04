@@ -6,11 +6,11 @@ FROM ubuntu:22.04 AS gtsam-basic-libraries
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get -y update && apt-get -y install
-RUN apt-get -y install build-essential cmake
+RUN apt-get -y install build-essential cmake apt-utils
 RUN apt-get -y install libboost-all-dev
 RUN apt-get -y install libtbb-dev
 RUN apt-get -y install git
-RUN apt-get -y install python3-pip python3-dev
+RUN apt-get -y install python3-pip
 RUN apt-get -y update && apt-get -y install
 
 # Get python packages

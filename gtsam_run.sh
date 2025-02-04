@@ -1,5 +1,4 @@
 #!/bin/bash
 docker run -it \
-    # --mount type=volume, src=gtsam-python-src, dst=/usr/src/external \
-    --mount type=bind, dst=/usr/src, readonly \
+    --mount type=bind,src=.,dst=/usr/src/external,readonly \
     gtsam-python
