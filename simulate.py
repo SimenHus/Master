@@ -3,7 +3,7 @@ import argparse
 import matplotlib.pyplot as plt
 import numpy as np
 
-from Simulation import Simulations
+import Simulation
 from Visualization.PlotVisualization import plot_graph3D
 from Visualization.GraphVisualization import FactorGraphVisualization
 
@@ -25,7 +25,7 @@ def main() -> None:
     # print(opts)
 
     steps = 30
-    sim = Simulations.Planar3D(steps)
+    sim = Simulation.Planar3D(steps)
 
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')

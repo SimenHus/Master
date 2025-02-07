@@ -1,21 +1,5 @@
-import numpy as np
 
-from .RigidMotion import SE3, SE2
-
-
-class PositionParameter:
-    def __init__(self, nonzero: bool = True, min: int = -2, max: int = 2) -> None:
-        self.nonzero = nonzero
-        self.min = min
-        self.max = max
-
-
-class RotationParameter:
-    def __init__(self, nonzero: bool = True, min: int = -2, max: int = 2) -> None:
-        self.nonzero = nonzero
-        self.min = min
-        self.max = max
-   
+from .common import *
 
 class TrajectoryGeneratorBaseClass:
     odometry: list
@@ -48,26 +32,3 @@ class TrajectoryGeneratorBaseClass:
 
             self.trajectory.append(node)
             self.odometry.append(odom)
-
-class TrajectoryPlanar3D(TrajectoryGeneratorBaseClass):
-    group = SE3
-    x_params = PositionParameter(nonzero=True)
-    y_params = PositionParameter(nonzero=True)
-    z_params = PositionParameter(nonzero=False)
-    roll_params = RotationParameter(nonzero=False)
-    pitch_params = RotationParameter(nonzero=False)
-    yaw_params = RotationParameter(nonzero=False)
-
-    position_parameters = [x_params, y_params, z_params]
-    rotation_parameters = [roll_params, pitch_params, yaw_params]
-
-
-
-class TrajectoryPlanar2D(TrajectoryGeneratorBaseClass):
-    group = SE2
-    x_params = PositionParameter(nonzero=True)
-    y_params = PositionParameter(nonzero=True)
-    roll_params = RotationParameter(nonzero=False)
-
-    position_parameters = [x_params, y_params]
-    rotation_parameters = [roll_params]
