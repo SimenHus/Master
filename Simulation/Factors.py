@@ -1,6 +1,5 @@
 
 from gtsam import CustomFactor, noiseModel, Pose3, Pose2, PriorFactorPoint3, Point3
-from gtsam import traits
 import numpy as np
 
 class PositionFactor2D(CustomFactor):
@@ -26,7 +25,7 @@ class PositionFactor2D(CustomFactor):
 
 class CameraExtrinsicFactor3D(CustomFactor):
     def __init__(self, from_key: int, to_key: int, measurement: Pose3, noise_model: noiseModel = None) -> None:
-        super().__init__(noiseModel, [from_key, to_key], self.evaluateError)
+        super().__init__(noise_model, [from_key, to_key], self.evaluateError)
         self.measurement = measurement
 
 
@@ -45,12 +44,22 @@ class CameraExtrinsicFactor3D(CustomFactor):
         T_ref_camera = values.atPose3(self.keys()[0]) # Current estimate of camera extrinsics from reference frame
         T_world_camera = values.atPose3(self.keys()[1]) # Current estimate of camera in world frame
 
-        hx = traits.between(T_world_ref, T_world_camera)
-        rval = traits.Local(T_ref_camera, hx)
+        H1, H2 = H[0], H[1]
+
+        # hx, H1_tmp, H2_tmp = T_world_ref.between(T_world_camera, H[0] is not None, H[1] is not None)
+        if H1.shape[0] > 0 and H2.shape[0] > 0:
+            hx = T_world_ref.between(T_world_camera, H1, H2)
+            rval = T_ref_camera.localCoordinates(hx, H1, H2)
+        else:
+            hx = T_world_ref.between(T_world_camera)
+            rval = T_ref_camera.localCoordinates(hx)
+        
+        # Hlocal = T_world_ref.ChartJacobian()
         if H is not None:
-            Hlocal = traits.ChartJacobian.Jacobian
-            H[0] = Hlocal * H[0]
-            H[1] = Hlocal * H[1]
+            # H[0] = Hlocal * H1
+            # H[1] = Hlocal * H2
+            H[0] = np.zeros((6, 6))
+            H[1] = np.zeros((6, 6))
         return rval
 
 
