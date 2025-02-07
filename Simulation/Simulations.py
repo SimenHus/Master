@@ -57,6 +57,7 @@ class SimulationBaseClass:
         computed_estimate = current_estimate * odometry_measurement # Compute estimate of the new state using odometry
         
         new_state_estimate = Values() if i > 0 else self.current_estimate
+        # new_state_estimate = Values()
         new_state_estimate.insert(key, computed_estimate) # Prepare the new state estimate to be added to ISAM
 
         # Perform incremental update to iSAM
@@ -118,3 +119,6 @@ class Planar2D(SimulationBaseClass):
 
 
     
+class Planar3DWithCamera(SimulationBaseClass):
+    def __init__(self, steps: int = 10) -> None:
+        super().__init__(steps, ISAM_params)()
