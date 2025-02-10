@@ -23,9 +23,11 @@ class Planar3DCamera(SimulationBaseClass):
         quat = [0, 0, 0, 1]
         rot = Rot3(*quat)
         t = Point3(10, 0, 0)
-        sigma = 1e0
+        sigma = 1e6
         self.camera_extrinsics = Pose3(rot, t)
         self.camera_extrinsics_covariance = noiseModel.Diagonal.Sigmas([sigma]*6) if extrinsic_cov is None else extrinsic_cov
+        # camera_prior = extrinsic_prior if extrinsic_prior is not None else self.camera_extrinsics
+        camera_prior = Pose3()
 
 
         self.steps = steps
@@ -37,7 +39,6 @@ class Planar3DCamera(SimulationBaseClass):
         self.current_estimate = Values() # Current estimate from ISAM
 
         self.prior_index = 1 # Index for prior
-        camera_prior = extrinsic_prior if extrinsic_prior is not None else self.camera_extrinsics
         self.graph.push_back(self.prior_factor(0, camera_prior, self.camera_extrinsics_covariance))
         self.current_estimate.insert(0, camera_prior) # Camera extrinsic prior
 
@@ -54,11 +55,11 @@ class Planar3DCamera(SimulationBaseClass):
         T_c1_c2 = self.camera_extrinsics * true_odom * self.camera_extrinsics.inverse()
         odometry_measurement = SimulatedMeasurement.sample(T_c1_c2.inverse(), self.odometry_noise) # Sample noisy odometry measurement
         camera_measurement = SimulatedMeasurement.sample(self.camera_extrinsics * true_state, self.measurement_noise) # Sample noisy camera measurement
-        reference_frame_measurement = SimulatedMeasurement.sample(true_state.inverse(), self.measurement_noise) # Sample noisy reference frame measurement
+        reference_frame_measurement = SimulatedMeasurement.sample(true_state, self.measurement_noise) # Sample noisy reference frame measurement
 
         self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))
-        self.graph.push_back(CameraExtrinsicFactor3D(0, key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
         self.graph.push_back(BetweenFactorPose3(key - 1, key, odometry_measurement, self.odometry_noise.default_noise_model()))
+        self.graph.push_back(CameraExtrinsicFactor3D(0, key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
 
         # Compute and insert the initialization estimate for the current pose using the noisy odometry measurement.
         current_camera_estimate = self.current_estimate.atPose3(key-1)

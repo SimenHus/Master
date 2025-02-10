@@ -24,7 +24,7 @@ def main() -> None:
     # opts = args.opts
     # print(opts)
 
-    steps = 30
+    steps = 10
     sim = Simulation.Planar3DCamera(steps)
 
     fig = plt.figure()
@@ -58,7 +58,7 @@ def main() -> None:
 
     print(f'True extrinsics: {sim.camera_extrinsics}')
     print(f'Estimated extrinsics: {sim.current_estimate.atPose3(0)}')
-    print(f'Estimated cov: {sim.camera_extrinsics_covariance}')
+    # print(f'Estimated cov: {sim.camera_extrinsics_covariance}')
 
     plt.show()
 

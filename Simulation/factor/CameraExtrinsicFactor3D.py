@@ -10,14 +10,14 @@ class CameraExtrinsicFactor3D(CustomFactor):
         T_ref_camera = values.atPose3(self.keys()[0]) # Current estimate of camera extrinsics from reference frame
         T_world_camera = values.atPose3(self.keys()[1]) # Current estimate of camera in world frame
 
-        T1 = T_world_camera
-        T2 = T_ref_camera
+        T1 = T_ref_camera
+        T2 = T_world_camera
 
-        prediction = T1.inverse() * T2
+        prediction = Pose3.between(T1, T2)
         error = Pose3.localCoordinates(self.measurement, prediction) # Error
 
         if H is not None:
-            H[0] = Pose3.AdjointMap(prediction.inverse()).T # From gtsam math.pdf
-            H[1] = -np.eye(6) # From gtsam math.pdf
+            H[0] = -Pose3.AdjointMap(prediction.inverse()) # From gtsam math.pdf
+            H[1] = np.eye(6) # From gtsam math.pdf
 
         return error
