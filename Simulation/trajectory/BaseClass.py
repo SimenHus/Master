@@ -25,7 +25,8 @@ class TrajectoryGeneratorBaseClass:
             r = np.zeros(self.group.dim_r) # Define initial zero vector for rotational odometry
             for j, param in enumerate(self.rotation_parameters):
                 if param.nonzero:
-                    r[j] = self.RNG.integers(low=param.min, high=param.max).astype(np.float64)
+                    deg = self.RNG.integers(low=param.min, high=param.max).astype(np.float64)
+                    r[j] = deg * np.pi / 180
             R = self.group.rot.Expmap(r)
             odom = self.group.pose(R, t)
             node = self.trajectory[i]*odom

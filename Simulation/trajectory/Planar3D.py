@@ -8,7 +8,7 @@ class TrajectoryPlanar3D(TrajectoryGeneratorBaseClass):
     z_params = PositionParameter(nonzero=False)
     roll_params = RotationParameter(nonzero=False)
     pitch_params = RotationParameter(nonzero=False)
-    yaw_params = RotationParameter(nonzero=False)
+    yaw_params = RotationParameter(nonzero=True, min=-10, max=10)
 
     position_parameters = [x_params, y_params, z_params]
     rotation_parameters = [roll_params, pitch_params, yaw_params]

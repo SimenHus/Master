@@ -7,7 +7,7 @@ class FactorGraphVisualization:
 
     @staticmethod
     def format_to_graphviz(graph: NonlinearFactorGraph, values: Values) -> Graph:
-        dot = Graph()
+        dot = Graph(engine='sfdp')
 
         value_symbol = 'x'
         for key in values.keys():
