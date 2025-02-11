@@ -29,7 +29,7 @@ class TrajectoryGeneratorBaseClass:
                     r[j] = deg * np.pi / 180
             R = self.group.rot.Expmap(r)
             odom = self.group.pose(R, t)
-            node = self.trajectory[i]*odom
+            node = odom * self.trajectory[i]
 
             self.trajectory.append(node)
             self.odometry.append(odom)

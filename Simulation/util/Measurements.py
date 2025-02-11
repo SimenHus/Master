@@ -9,6 +9,7 @@ from .NoiseModel import NoiseModel
 
 
 class SimulatedMeasurement:
+    @staticmethod
     def sample(true_state: Pose3 | Pose2, noise_model: NoiseModel) -> Pose3 | Pose2:
         group = GroupIdentifier.identify(true_state)
         cov = noise_model.default_noise_model().covariance()

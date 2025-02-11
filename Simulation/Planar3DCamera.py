@@ -38,13 +38,13 @@ class Planar3DCamera(SimulationBaseClass):
         self.graph = NonlinearFactorGraph() # Define the factorgraph
         self.current_estimate = Values() # Current estimate from ISAM
 
-        self.prior_index = 1 # Index for prior
+        self.prior_index = 0 # Index for prior
         self.graph.push_back(self.prior_factor(0, camera_prior, self.camera_extrinsics_covariance))
         self.current_estimate.insert(0, camera_prior) # Camera extrinsic prior
 
         T_world_camera = self.camera_extrinsics * self.trajectory.prior
-        self.graph.push_back(self.prior_factor(self.prior_index, T_world_camera, self.prior_noise.default_noise_model())) # Insert prior into graph
-        self.current_estimate.insert(self.prior_index, SimulatedMeasurement.sample(T_world_camera, self.prior_noise)) # Insert noisy prior into estimates
+        # self.graph.push_back(self.prior_factor(self.prior_index, T_world_camera, self.prior_noise.default_noise_model())) # Insert prior into graph
+        # self.current_estimate.insert(self.prior_index, SimulatedMeasurement.sample(T_world_camera, self.prior_noise)) # Insert noisy prior into estimates
 
     def sim_step(self, i: int) -> None:
         key = i + self.prior_index + 1 # Key for current factor
@@ -58,18 +58,18 @@ class Planar3DCamera(SimulationBaseClass):
         reference_frame_measurement = SimulatedMeasurement.sample(true_state, self.measurement_noise) # Sample noisy reference frame measurement
 
         self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))
-        self.graph.push_back(BetweenFactorPose3(key - 1, key, odometry_measurement, self.odometry_noise.default_noise_model()))
+        if i != 0: self.graph.push_back(BetweenFactorPose3(key - 1, key, odometry_measurement, self.odometry_noise.default_noise_model()))
         self.graph.push_back(CameraExtrinsicFactor3D(0, key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
 
-        # Compute and insert the initialization estimate for the current pose using the noisy odometry measurement.
-        current_camera_estimate = self.current_estimate.atPose3(key-1)
-
-        computed_camera_estimate = current_camera_estimate * odometry_measurement # Compute estimate of the new state using odometry
+        
         
         if i == 0:
             new_values = self.current_estimate
+            computed_camera_estimate = camera_measurement
         else:
             new_values = Values()
+            current_camera_estimate = self.current_estimate.atPose3(key-1)
+            computed_camera_estimate = current_camera_estimate * odometry_measurement # Compute estimate of the new state using odometry
 
         new_values.insert(key, computed_camera_estimate) # Prepare the new state estimate to be added to ISAM
 
