@@ -25,12 +25,13 @@ def main() -> None:
     # opts = args.opts
     # print(opts)
 
-    steps = 70
+    steps = 50
     sim = Simulation.PlanarLandmark3D(steps)
 
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')
-    origins = np.array([(sim.camera_extrinsics * node).translation() for node in sim.trajectory.trajectory])
+    origins = np.array([(node.compose(sim.camera_extrinsics)).translation() for node in sim.trajectory.trajectory])
+    origins2 = np.array([node.translation() for node in sim.trajectory.trajectory])
 
     sim.simulate_all()
     ax.grid()
@@ -40,7 +41,9 @@ def main() -> None:
     ax.set_zlim([-5, 5])
 
     plot_graph3D(sim.graph, sim.current_estimate, ax=ax, draw_cov=False)
-    ax.plot(origins[:, 0], origins[:, 1], origins[:, 2], '-o')
+    ax.plot(origins[:, 0], origins[:, 1], origins[:, 2], '-o', label='Camera')
+    ax.plot(origins2[:, 0], origins2[:, 1], origins2[:, 2], '-o', label='Base')
+    ax.legend()
 
     FactorGraphVisualization.draw_factor_graph(OUTPUT_FOLDER, sim.graph, sim.current_estimate)
 

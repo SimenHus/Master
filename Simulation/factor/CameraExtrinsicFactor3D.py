@@ -7,17 +7,14 @@ class CameraExtrinsicFactor3D(CustomFactor):
         self.measurement = measurement
 
     def evaluateError(self, _, values, H = None):
-        T_ref_camera = values.atPose3(self.keys()[0]) # Current estimate of camera extrinsics from reference frame
-        T_world_camera = values.atPose3(self.keys()[1]) # Current estimate of camera in world frame
+        T_rel = values.atPose3(self.keys()[0]) # Current estimate of relative pose between base and camera
+        T_cam = values.atPose3(self.keys()[1]) # Current estimate of camera pose in world frame
 
-        T1 = T_ref_camera
-        T2 = T_world_camera
-
-        prediction = Pose3.between(T1, T2)
-        error = Pose3.localCoordinates(self.measurement, prediction) # Error
+        prediction = T_cam.compose(T_rel.inverse()) # Camera pose - relative pose = base pose
+        error = Pose3.localCoordinates(prediction, self.measurement) # Compare measured base pose with predicted base pose
 
         if H is not None:
-            H[0] = -Pose3.AdjointMap(prediction.inverse()) # From gtsam math.pdf
-            H[1] = np.eye(6) # From gtsam math.pdf
+            H[0] = Pose3.AdjointMap(T_rel) # From gtsam math.pdf, compose derivative first argument
+            H[1] = np.eye(6) # From gtsam math.pdf, compose derivative second argument
 
         return error

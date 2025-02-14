@@ -48,5 +48,4 @@ class Special(NoiseModel):
     sigma_x = 0.1 # [m]
     sigma_y = 0.1 # [m]
     sigma_z = 0.1 # [m]
-    sigma_r = 0.1 # [m]
-    std_dev_list = [sigma_x, sigma_y, sigma_z, sigma_r]
+    std_dev_list = [sigma_x, sigma_y, sigma_z]

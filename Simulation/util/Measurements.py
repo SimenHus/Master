@@ -31,4 +31,4 @@ class SimulatedMeasurement:
         
         group_noise = group.pose(noisy_rotation, noisy_translation)
 
-        return true_state * group_noise
+        return true_state.compose(group_noise)

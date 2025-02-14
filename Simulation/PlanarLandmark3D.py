@@ -25,7 +25,7 @@ class PlanarLandmark3D(SimulationBaseClass):
 
         quat = [0, 0, 0, 1]
         rot = Rot3(*quat)
-        t = Point3(1, 0, 0)
+        t = Point3(2, 0, 0)
         sigma = 1e6
         self.camera_extrinsics = Pose3(rot, t)
         self.camera_extrinsics_covariance = noiseModel.Diagonal.Sigmas([sigma]*6) if extrinsic_cov is None else extrinsic_cov
@@ -60,9 +60,11 @@ class PlanarLandmark3D(SimulationBaseClass):
 
         base_true_odom = self.trajectory.odometry[i] # Current true odometry
         base_true_state = self.trajectory.trajectory[i + 1] # Current true state
-        camera_true_state = self.camera_extrinsics * base_true_state
+        prev_camera_state = self.trajectory.trajectory[i].compose(self.camera_extrinsics) # Prev camera state
+        camera_true_state = base_true_state.compose(self.camera_extrinsics)
+        # camera_true_odom = self.camera_extrinsics * base_true_odom * self.camera_extrinsics.inverse()
+        camera_true_odom = Pose3.between(prev_camera_state, camera_true_state)
 
-        camera_true_odom = self.camera_extrinsics * base_true_odom * self.camera_extrinsics.inverse()
         odometry_measurement = SimulatedMeasurement.sample(camera_true_odom, self.odometry_noise) # Sample noisy odometry measurement
         camera_measurement = SimulatedMeasurement.sample(camera_true_state, self.measurement_noise) # Sample noisy camera measurement
         reference_frame_measurement = SimulatedMeasurement.sample(base_true_state, self.measurement_noise) # Sample noisy reference frame measurement
@@ -77,19 +79,19 @@ class PlanarLandmark3D(SimulationBaseClass):
 
             range_measurement = np.linalg.norm(bearing_local)
             bearing_measurement = Unit3(bearing_local)
-            self.graph.push_back(self.landmark_factor(key, self.landmark_index + j, bearing_measurement, range_measurement, self.landmark_noise.default_noise_model()))
+            # self.graph.push_back(self.landmark_factor(key, self.landmark_index + j, bearing_measurement, range_measurement, self.landmark_noise.default_noise_model()))
 
 
-        # self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))
+        self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))
         if i != 0: self.graph.push_back(BetweenFactorPose3(key - 1, key, odometry_measurement, self.odometry_noise.default_noise_model()))
         self.graph.push_back(CameraExtrinsicFactor3D(0, key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
 
-        for j in range(i + 1): # Cheaty way to check for loop closures
-            if j == i: continue # Dont check current position
-            state = self.trajectory.trajectory[j + 1]
-            if np.allclose(state.translation(), base_true_state.translation(), rtol=1e-2): # Loop closure
-                print('Closure!')
-                self.graph.push_back(BetweenFactorPose3(key, j + 1, odometry_measurement, self.odometry_noise.default_noise_model()))
+        # for j in range(i + 1): # Cheaty way to check for loop closures
+        #     if j == i: continue # Dont check current position
+        #     state = self.trajectory.trajectory[j + 1]
+        #     if np.allclose(state.translation(), base_true_state.translation(), rtol=1e-2): # Loop closure
+        #         print('Closure!')
+        #         self.graph.push_back(BetweenFactorPose3(key, j + 1, odometry_measurement, self.odometry_noise.default_noise_model()))
 
         
         
@@ -99,7 +101,7 @@ class PlanarLandmark3D(SimulationBaseClass):
         else:
             new_values = Values()
             current_camera_estimate = self.current_estimate.atPose3(key-1)
-            computed_camera_estimate = odometry_measurement * current_camera_estimate # Compute estimate of the new state using odometry
+            computed_camera_estimate = current_camera_estimate.compose(odometry_measurement) # Compute estimate of the new state using odometry
 
         new_values.insert(key, computed_camera_estimate) # Prepare the new state estimate to be added to ISAM
 

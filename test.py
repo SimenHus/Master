@@ -25,8 +25,8 @@ def main() -> None:
     # opts = args.opts
     # print(opts)
 
-    steps = 10
-    sim = Simulation.AlternativeGraph(steps)
+    steps = 50
+    sim = Simulation.PlanarLandmarkAltFactor(steps)
 
     fig = plt.figure()
     ax = fig.add_subplot(projection='3d')

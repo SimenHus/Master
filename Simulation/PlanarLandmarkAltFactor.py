@@ -2,7 +2,7 @@
 from .common import *
 from .BaseClass import SimulationBaseClass
 
-class AlternativeGraph(SimulationBaseClass):
+class PlanarLandmarkAltFactor(SimulationBaseClass):
     def __init__(self, steps: int = 10, extrinsic_prior = None, extrinsic_cov = None) -> None:
         # Define ISAM2 parameters
         parameters = ISAM2Params()
@@ -45,7 +45,7 @@ class AlternativeGraph(SimulationBaseClass):
         self.graph.push_back(self.prior_factor(0, camera_prior, self.camera_extrinsics_covariance))
         self.current_estimate.insert(0, camera_prior) # Camera extrinsic prior
 
-        self.graph.push_back(self.prior_factor(self.prior_index+1, self.trajectory.prior, self.prior_noise.default_noise_model())) # Insert prior into graph
+        # self.graph.push_back(self.prior_factor(self.prior_index+1, self.trajectory.prior, self.prior_noise.default_noise_model())) # Insert prior into graph
 
         self.landmark_index = 1000
         self.landmarks = [Point3(10, 0, 0), Point3(-10, 0, 0), Point3(0, 10, 0), Point3(0, -10, 0)]
@@ -65,16 +65,8 @@ class AlternativeGraph(SimulationBaseClass):
 
 
         for j, landmark in enumerate(self.landmarks):
-            true_bearing_world = landmark - camera_true_state.translation()
-            noisy_bearing_world = landmark - camera_measurement.translation()
-            bearing_world = true_bearing_world
-            R = camera_measurement.rotation().matrix()
-            bearing_local = R@bearing_world
-
-            range_measurement = np.linalg.norm(bearing_local).reshape((1,))
-            bearing_measurement = bearing_local / range_measurement
-            bearing_range = np.concatenate((range_measurement, bearing_measurement))
-            self.graph.push_back(self.landmark_factor(0, key, self.landmark_index + j, bearing_range, self.landmark_noise.default_noise_model()))
+            landmark_camera = camera_measurement.transformTo(landmark)
+            self.graph.push_back(self.landmark_factor(0, key, self.landmark_index + j, landmark_camera, self.landmark_noise.default_noise_model()))
 
 
         self.graph.push_back(PriorFactorPose3(key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
@@ -86,7 +78,7 @@ class AlternativeGraph(SimulationBaseClass):
         else:
             new_values = Values()
             current_camera_estimate = self.current_estimate.atPose3(key-1)
-            computed_camera_estimate = odometry_measurement * current_camera_estimate # Compute estimate of the new state using odometry
+            computed_camera_estimate = current_camera_estimate.compose(odometry_measurement) # Compute estimate of the new state using odometry
 
         new_values.insert(key, computed_camera_estimate) # Prepare the new state estimate to be added to ISAM
 
