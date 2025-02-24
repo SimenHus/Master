@@ -1,6 +1,8 @@
 
 from .common import *
 
+import gtsam
+
 def skew_symmetric(v):
     return np.array([
         [0, -v[2], v[1]],
@@ -27,25 +29,28 @@ class CameraExtrinsicFactorAlt(CustomFactor):
         self.measurement = measurement
 
     def evaluateError(self, _, values, H = None):
-        T_ref = values.atPose3(self.keys()[0])
-        T_rel = values.atPose3(self.keys()[1])
+        T_rel = values.atPose3(self.keys()[0])
+        T_ref = values.atPose3(self.keys()[1])
         landmark = values.atPoint3(self.keys()[2])
 
-        T_cam = T_ref.compose(T_rel)
-        prediction = T_cam.transformTo(landmark) # Landmark in camera frame
 
-        landmark_temp = T_ref.transformTo(landmark)
+        H_rel = np.zeros((6, 6), dtype=np.float64, order='F')
+        H_ref = np.zeros((6, 6), dtype=np.float64, order='F')
+        H_cam = np.zeros((3, 6), dtype=np.float64, order='F')
+        H_p = np.zeros((3, 3), dtype=np.float64, order='F')
+
+
+        T_cam = T_ref.compose(T_rel, H_ref, H_rel)
+        prediction = T_cam.transformTo(landmark, H_cam, H_p) # Landmark in camera frame
+
         error = prediction - self.measurement
-        # error = self.measurement - prediction
-        H1 = Hinv(T_ref, landmark)
-        H2 = Hinv(T_rel, landmark_temp)
+
         if H is not None:
-            # H[0] = -(T_rel.inverse().matrix()@Hp2)[:3, :]
-            # H[1] = -(T_rel.inverse().matrix()@T_ref.inverse().matrix()@Hp)[:3, :]
-            # H[0] = (-T_rel.inverse().matrix()@H1)[:3, :]
-            # H[1] = (-H2)[:3, :]
-            H[0] = np.zeros((3, 6))
-            H[1] = np.zeros((3, 6))
-            H[2] = T_cam.inverse().rotation().matrix()
+            H[0] = H_cam@H_rel # Problem in the second part of this result?
+            # H[0][:, 3:] = T_cam.rotation().matrix()
+            H[1] = H_cam@H_ref # Seems correct
+            # H[0] = np.zeros((3, 6))
+            # H[1] = np.zeros((3, 6))
+            H[2] = H_p # Correct, same as T_cam.inverse().rotation().matrix()
 
         return error

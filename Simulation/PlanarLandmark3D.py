@@ -79,7 +79,7 @@ class PlanarLandmark3D(SimulationBaseClass):
 
             range_measurement = np.linalg.norm(bearing_local)
             bearing_measurement = Unit3(bearing_local)
-            # self.graph.push_back(self.landmark_factor(key, self.landmark_index + j, bearing_measurement, range_measurement, self.landmark_noise.default_noise_model()))
+            self.graph.push_back(self.landmark_factor(key, self.landmark_index + j, bearing_measurement, range_measurement, self.landmark_noise.default_noise_model()))
 
 
         self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))

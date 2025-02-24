@@ -25,7 +25,7 @@ def main() -> None:
     # opts = args.opts
     # print(opts)
 
-    steps = 50
+    steps = 10
     sim = Simulation.PlanarLandmarkAltFactor(steps)
 
     fig = plt.figure()
