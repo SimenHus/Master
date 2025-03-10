@@ -31,7 +31,7 @@ class PlanarLandmark3D(SimulationBaseClass):
         self.camera_extrinsics_covariance = noiseModel.Diagonal.Sigmas([sigma]*6) if extrinsic_cov is None else extrinsic_cov
         # camera_prior = extrinsic_prior if extrinsic_prior is not None else self.camera_extrinsics
         camera_prior = Pose3()
-        camera_prior = SimulatedMeasurement.sample(self.camera_extrinsics, self.measurement_noise)
+        # camera_prior = SimulatedMeasurement.sample(self.camera_extrinsics, self.measurement_noise)
 
 
         self.steps = steps
@@ -47,8 +47,8 @@ class PlanarLandmark3D(SimulationBaseClass):
         self.current_estimate.insert(0, camera_prior) # Camera extrinsic prior
 
 
-        T_world_camera = self.camera_extrinsics * self.trajectory.prior
-        self.graph.push_back(self.prior_factor(self.prior_index+1, T_world_camera, self.prior_noise.default_noise_model())) # Insert prior into graph
+        # T_world_camera = self.camera_extrinsics * self.trajectory.prior
+        # self.graph.push_back(self.prior_factor(self.prior_index+1, T_world_camera, self.prior_noise.default_noise_model())) # Insert prior into graph
 
         self.landmark_index = 1000
         self.landmarks = [Point3(10, 0, 0), Point3(-10, 0, 0), Point3(0, 10, 0), Point3(0, -10, 0)]
@@ -82,7 +82,7 @@ class PlanarLandmark3D(SimulationBaseClass):
             self.graph.push_back(self.landmark_factor(key, self.landmark_index + j, bearing_measurement, range_measurement, self.landmark_noise.default_noise_model()))
 
 
-        self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))
+        # self.graph.push_back(PriorFactorPose3(key, camera_measurement, self.measurement_noise.default_noise_model()))
         if i != 0: self.graph.push_back(BetweenFactorPose3(key - 1, key, odometry_measurement, self.odometry_noise.default_noise_model()))
         self.graph.push_back(CameraExtrinsicFactor3D(0, key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
 

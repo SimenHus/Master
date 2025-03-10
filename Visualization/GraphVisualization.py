@@ -1,5 +1,5 @@
 from graphviz import Source, Graph
-from gtsam import NonlinearFactorGraph, Values
+from gtsam import NonlinearFactorGraph, Values, Symbol
 
 
 class FactorGraphVisualization:
@@ -9,16 +9,19 @@ class FactorGraphVisualization:
     def format_to_graphviz(graph: NonlinearFactorGraph, values: Values) -> Graph:
         dot = Graph(engine='sfdp')
 
-        value_symbol = 'x'
         for key in values.keys():
-            dot.node(value_symbol + str(key), shape='ellipse')
+            sym = Symbol(key)
+            name, index = chr(sym.chr()), str(sym.index())
+            dot.node(name + index, shape='ellipse')
 
         for i in range(graph.size()):
             factor = graph.at(i)
             factor_name = f'Factor {i}'
             dot.node(factor_name, type(factor).__name__, shape='box', style='filled')
             for key in factor.keys():
-                dot.edge(factor_name, value_symbol + str(key))
+                sym = Symbol(key)
+                name, index = chr(sym.chr()), str(sym.index())
+                dot.edge(factor_name, name + index)
         return dot
 
 

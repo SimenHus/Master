@@ -11,13 +11,15 @@ class CameraExtrinsicFactor3D(CustomFactor):
         T_cam = values.atPose3(self.keys()[1]) # Current estimate of camera pose in world frame
 
         H_rel = np.zeros((6, 6), dtype=np.float64, order='F')
+        H_inv = np.zeros((6, 6), dtype=np.float64, order='F')
         H_cam = np.zeros((6, 6), dtype=np.float64, order='F')
+        H_local = np.zeros((6, 6), dtype=np.float64, order='F')
 
-        prediction = T_cam.compose(T_rel.inverse(), H_cam, H_rel) # Camera pose - relative pose = base pose
-        error = Pose3.localCoordinates(prediction, self.measurement) # Compare measured base pose with predicted base pose
+        prediction = T_cam.compose(T_rel.inverse(H_inv), H_cam, H_rel) # Camera pose - relative pose = base pose
+        error = Pose3.localCoordinates(prediction, self.measurement, H_local) # Compare measured base pose with predicted base pose
 
         if H is not None:
-            H[0] = H_cam # From gtsam math.pdf, compose derivative first argument
-            H[1] = np.eye(6) # From gtsam math.pdf, compose derivative second argument
+            H[0] = H_local@H_rel@H_inv # From gtsam math.pdf, compose derivative first argument
+            H[1] = H_local@H_cam # From gtsam math.pdf, compose derivative second argument
 
         return error

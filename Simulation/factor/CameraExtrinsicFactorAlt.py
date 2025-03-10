@@ -45,12 +45,10 @@ class CameraExtrinsicFactorAlt(CustomFactor):
 
         error = prediction - self.measurement
 
+        # print(error)
         if H is not None:
             H[0] = H_cam@H_rel # Problem in the second part of this result?
-            # H[0][:, 3:] = T_cam.rotation().matrix()
             H[1] = H_cam@H_ref # Seems correct
-            # H[0] = np.zeros((3, 6))
-            # H[1] = np.zeros((3, 6))
             H[2] = H_p # Correct, same as T_cam.inverse().rotation().matrix()
 
         return error

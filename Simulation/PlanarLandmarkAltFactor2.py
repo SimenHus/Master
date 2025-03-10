@@ -2,20 +2,21 @@
 from .common import *
 from .BaseClass import SimulationBaseClass
 
-X = lambda i: Symbol('x', i)
-L = lambda j: Symbol('l', j)
-
-class PlanarLandmarkAltFactor(SimulationBaseClass):
+class PlanarLandmarkAltFactor2(SimulationBaseClass):
     def __init__(self, steps: int = 10, extrinsic_prior = None, extrinsic_cov = None) -> None:
         # Define ISAM2 parameters
         parameters = ISAM2Params()
         parameters.setRelinearizeThreshold(0.1)
         parameters.relinearizeSkip = 1
 
+        self.inital_estimate = Values()
+
         self.trajectory = CirclePlanar3D(steps)
 
         self.odometry_noise = Odometry3D
         self.odometry_factor = BetweenFactorPose3
+
+        # print(Symbol('x', 10).value())
 
         self.measurement_noise = Odometry3D
 
@@ -47,19 +48,21 @@ class PlanarLandmarkAltFactor(SimulationBaseClass):
         self.current_estimate = Values() # Current estimate from ISAM
 
         self.prior_index = 0 # Index for prior
-        self.graph.push_back(self.prior_factor(0, camera_prior, self.camera_extrinsics_covariance))
-        self.current_estimate.insert(0, camera_prior) # Camera extrinsic prior
+        self.graph.push_back(self.prior_factor(T(0), camera_prior, self.camera_extrinsics_covariance))
+        self.inital_estimate.insert(T(0), camera_prior) # Camera extrinsic prior
 
-        # self.graph.push_back(self.prior_factor(self.prior_index+1, self.trajectory.prior, self.prior_noise.default_noise_model())) # Insert prior into graph
+        # self.graph.push_back(self.prior_factor(X(1), self.trajectory.prior, self.prior_noise.default_noise_model()))
 
         dist = 5
-        self.landmark_index = 1000
-        # self.landmarks = [Point3(dist, 0, 0), Point3(-dist, 0, 0), Point3(0, dist, 0), Point3(0, -dist, 0)]
+        self.landmark_index = 0
+        self.landmarks = [Point3(dist, 0, 0), Point3(-dist, 0, 0), Point3(0, dist, 0), Point3(0, -dist, 0)]
         self.landmarks = [Point3(0, dist, 0), Point3(dist, 0, 0)]
+        self.graph.push_back(PriorFactorPoint3(L(0), self.landmarks[0], self.landmark_noise.default_noise_model()))
         for i, landmark in enumerate(self.landmarks):
-            self.current_estimate.insert(self.landmark_index + i, landmark)
+            self.inital_estimate.insert(L(self.landmark_index + i), landmark)
 
     def sim_step(self, i: int) -> None:
+        self.current_step += 1
         key = i + self.prior_index + 1 # Key for current factor
 
         base_true_odom = self.trajectory.odometry[i] # Current true odometry
@@ -73,31 +76,31 @@ class PlanarLandmarkAltFactor(SimulationBaseClass):
 
         for j, landmark in enumerate(self.landmarks):
             landmark_camera = camera_true_state.transformTo(landmark)
-            self.graph.push_back(self.landmark_factor(0, key, self.landmark_index + j, landmark_camera, self.landmark_noise.default_noise_model()))
+            self.graph.push_back(self.landmark_factor(T(0), X(key), L(self.landmark_index + j), landmark_camera, self.landmark_noise.default_noise_model()))
 
 
-        self.graph.push_back(PriorFactorPose3(key, reference_frame_measurement, self.measurement_noise.default_noise_model()))
-        if i != 0: self.graph.push_back(BetweenFactorPose3(key - 1, key, odometry_measurement, self.odometry_noise.default_noise_model()))
+        self.graph.push_back(PriorFactorPose3(X(key), reference_frame_measurement, self.measurement_noise.default_noise_model()))
+        if i != 0: self.graph.push_back(BetweenFactorPose3(X(key - 1), X(key), odometry_measurement, self.odometry_noise.default_noise_model()))
 
         if i == 0:
-            new_values = self.current_estimate
             # computed_pose = reference_frame_measurement
             computed_pose = base_true_state
         else:
-            new_values = Values()
-            current_pose_estimate = self.current_estimate.atPose3(key-1)
+            if i == 1:
+                current_pose_estimate = self.inital_estimate.atPose3(X(key-1))
+            else:
+                current_pose_estimate = self.current_estimate.atPose3(X(key-1))
             computed_pose = current_pose_estimate.compose(odometry_measurement) # Compute estimate of the new state using odometry
 
-        new_values.insert(key, computed_pose) # Prepare the new state estimate to be added to ISAM
+        self.inital_estimate.insert(X(key), computed_pose) # Prepare the new state estimate to be added to ISAM
 
+        if i == 0: return
         # Perform incremental update to iSAM
-        self.ISAM.update(self.graph, new_values)
+        self.ISAM.update(self.graph, self.inital_estimate)
         extra_updates = 0
         for _ in range(extra_updates): self.ISAM.update()
         self.current_estimate = self.ISAM.calculateEstimate()
+        self.inital_estimate.clear()
 
         marginals = Marginals(self.graph, self.current_estimate)
-        self.camera_extrinsics_covariance = marginals.marginalCovariance(0)
-
-
-        self.current_step += 1
+        # self.camera_extrinsics_covariance = marginals.marginalCovariance(0)
