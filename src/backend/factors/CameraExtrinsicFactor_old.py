@@ -1,6 +1,9 @@
 
-from .common import *
+from gtsam import CustomFactor
+from gtsam import noiseModel
+from gtsam import Pose3, Point3
 
+import numpy as np
 import symforce.symbolic as sf
 
 
@@ -55,7 +58,7 @@ class SymbolicJacobian:
         return jac.subs(subs).to_numpy()
 
 
-class CameraExtrinsicFactorAlt(CustomFactor):
+class CameraExtrinsicFactor(CustomFactor):
     def __init__(self, camera_key: int, ref_key: int, landmark_key: int, measurement: np.ndarray, noise_model: noiseModel = None) -> None:
         super().__init__(noise_model, [camera_key, ref_key, landmark_key], self.evaluateError)
         self.measurement = measurement
