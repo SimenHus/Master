@@ -1,11 +1,4 @@
 
-import gtsam
-from gtsam import ISAM2Params, ISAM2, Marginals
-from gtsam import NonlinearFactorGraph, Values, Symbol
-from gtsam import PriorFactorPose3, BetweenFactorPose3, BearingRangeFactor3D, PriorFactorPoint3, Pose3, Point3, Rot3, GPSFactor
-from gtsam import noiseModel, LevenbergMarquardtOptimizer, DoglegOptimizer
-from gtsam.symbol_shorthand import X, L, T
-
 import numpy as np
 import cv2
 
@@ -14,8 +7,10 @@ import matplotlib
 matplotlib.use('TkAgg')
 
 from src.backend import SLAM
-from src.frontend import FeatureExtractor
+from src.frontend import FeatureHandler, KeyframeManager
 from src.common import Frame
+from src.motion import Pose3
+from src.visualization import draw_matches
 
 from src.visualization.GraphVisualization import FactorGraphVisualization
 from src.visualization.PlotVisualization import plot_graph3D
@@ -25,20 +20,43 @@ class CameraExtrinsicEstimation:
 
     def __init__(self) -> None:
         self.SLAM = SLAM()
+        self.kf_manager = KeyframeManager(0, 0)
 
-        image = cv2.imread('test.png', cv2.IMREAD_GRAYSCALE)
-        frame = Frame(0, image)
-        frame = FeatureExtractor.extract_features(frame)
-        img2 = cv2.drawKeypoints(frame.image, frame.keypoints, None, color=(0,255,0), flags=0)
-        plt.imshow(img2)
-        plt.show()
+        image1 = cv2.imread('test.png', cv2.IMREAD_GRAYSCALE)
+        frame1 = Frame(0, image1)
+
+        image2 = cv2.imread('test3.png', cv2.IMREAD_GRAYSCALE)
+        frame2 = Frame(1, image2)
+
+
+        self.images = [frame1, frame2]
 
     def run(self) -> None:
-        return
+
+        for image in self.images:
+            keypoints, descriptors = FeatureHandler.extract_features(image)
+            image.set_features(keypoints, descriptors)
+            pose = Pose3()
+            is_keyframe = self.kf_manager.determine_keyframe(pose)
+            if is_keyframe: self.kf_manager.add_keyframe(image)
+        
+
+
 
 
 if __name__ == '__main__':
     app = CameraExtrinsicEstimation()
     app.run()
+
+    frame1,frame2 = app.kf_manager.keyframes
+    matched_image = draw_matches(frame1, frame2)
+
+    plt.imshow(matched_image)
+    plt.show()
+
+
+    # img2 = cv2.drawKeypoints(frame.image, frame.keypoints, None, color=(0,255,0), flags=0)
+    # plt.imshow(img2)
+    # plt.show()
 
     exit()

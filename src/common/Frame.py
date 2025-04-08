@@ -8,3 +8,7 @@ class Frame:
     image: np.ndarray
     keypoints: tuple | None = None
     descriptors: np.ndarray | None = None
+
+    def set_features(self, keypoints, descriptors) -> None:
+        self.keypoints = keypoints
+        self.descriptors = descriptors

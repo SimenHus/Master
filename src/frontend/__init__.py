@@ -1,1 +1,2 @@
-from .FeatureExtractor import FeatureExtractor
+from .FeatureHandler import FeatureHandler
+from .KeyframeManager import KeyframeManager
