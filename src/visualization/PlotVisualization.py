@@ -83,15 +83,16 @@ def plot_graph3D(graph: gtsam.NonlinearFactorGraph, result: gtsam.Values, draw_c
         fig = plt.figure()
         ax = fig.add_subplot(projection='3d')
 
-    marginals = gtsam.Marginals(graph, result)
+    if draw_cov: marginals = gtsam.Marginals(graph, result)
     poses = gtsam.utilities.allPose3s(result)
     keys = poses.keys()
     origins = []
     for key in keys:
         pose = poses.atPose3(key)
         origin = pose.translation()
-        cov = marginals.marginalCovariance(key)
-        if draw_cov: draw_covariance3D(ax, pose, cov)
+        if draw_cov:
+            cov = marginals.marginalCovariance(key)
+            draw_covariance3D(ax, pose, cov)
 
         origins.append(origin)
 
