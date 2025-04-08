@@ -5,7 +5,7 @@ from gtsam import PriorFactorPose3, BetweenFactorPose3, Pose3, Point3
 from gtsam import noiseModel
 from gtsam.symbol_shorthand import X, L, T
 
-from Simulation.factor import CameraExtrinsicFactorAlt
+from src.factors import CameraExtrinsicFactor
 
 class SLAM:
     def __init__(self) -> None:
@@ -38,7 +38,7 @@ class SLAM:
 
 
     def landmark_measurement(self, pose_id: int, landmark_id: int, landmark_position_estimate: Point3, pixels: tuple, measurement_noise: noiseModel) -> None:
-        self.graph.push_back(CameraExtrinsicFactorAlt(T(1), X(pose_id), L(landmark_id), pixels, measurement_noise))
+        self.graph.push_back(CameraExtrinsicFactor(T(1), X(pose_id), L(landmark_id), pixels, measurement_noise))
         node_exists = self.check_node_exists(L(landmark_id))
         if node_exists: return
         self.new_nodes.insert(L(landmark_id), landmark_position_estimate)
