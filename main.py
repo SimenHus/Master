@@ -2,6 +2,9 @@
 import numpy as np
 import cv2
 
+import glob
+import csv
+
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
@@ -27,6 +30,18 @@ class CameraExtrinsicEstimation:
 
         image2 = cv2.imread('test3.png', cv2.IMREAD_GRAYSCALE)
         frame2 = Frame(1, image2)
+
+        # image_paths = glob.glob('C:\Users\simen\Desktop\Prog\Dataset\mav0\cam0\data')
+        image_csv = '/mnt/c/Users/simen/Desktop/Prog/Dataset/mav0/cam0/data.csv'
+
+        images = {}
+        
+        with open(image_csv) as csvfile:
+            reader = csv.reader(csvfile)
+            for i, row in enumerate(reader):
+                if i == 0: continue
+                timestamp, filename = int(row[0]), row[1]
+                images[timestamp] = filename
 
 
         self.images = [frame1, frame2]
