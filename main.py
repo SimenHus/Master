@@ -24,6 +24,7 @@ class CameraExtrinsicEstimation:
     def __init__(self) -> None:
         self.SLAM = SLAM()
         self.kf_manager = KeyframeManager(0, 0)
+        self.images = []
 
         image1 = cv2.imread('test.png', cv2.IMREAD_GRAYSCALE)
         frame1 = Frame(0, image1)
@@ -31,20 +32,27 @@ class CameraExtrinsicEstimation:
         image2 = cv2.imread('test3.png', cv2.IMREAD_GRAYSCALE)
         frame2 = Frame(1, image2)
 
+        data_folder = '/mnt/c/Users/simen/Desktop/Prog/Dataset/mav0/cam0/data'
         # image_paths = glob.glob('C:\Users\simen\Desktop\Prog\Dataset\mav0\cam0\data')
-        image_csv = '/mnt/c/Users/simen/Desktop/Prog/Dataset/mav0/cam0/data.csv'
+        # image_csv = '/mnt/c/Users/simen/Desktop/Prog/Dataset/mav0/cam0/data.csv'
+        path = data_folder + '/*.png'
+        list_of_files = glob.glob(path)
 
-        images = {}
+        n = 100
+        for i, file in enumerate(list_of_files[:n]):
+            image = cv2.imread(file, cv2.IMREAD_GRAYSCALE)
+            frame = Frame(i, image)
+            self.images.append(frame)
         
-        with open(image_csv) as csvfile:
-            reader = csv.reader(csvfile)
-            for i, row in enumerate(reader):
-                if i == 0: continue
-                timestamp, filename = int(row[0]), row[1]
-                images[timestamp] = filename
+        # images = {}
+        # with open(image_csv) as csvfile:
+        #     reader = csv.reader(csvfile)
+        #     for i, row in enumerate(reader):
+        #         if i == 0: continue
+        #         timestamp, filename = int(row[0]), row[1]
+        #         images[timestamp] = filename
 
-
-        self.images = [frame1, frame2]
+        # self.images = [frame1, frame2]
 
     def run(self) -> None:
 
@@ -57,17 +65,15 @@ class CameraExtrinsicEstimation:
         
 
 
-
-
 if __name__ == '__main__':
     app = CameraExtrinsicEstimation()
     app.run()
 
-    frame1,frame2 = app.kf_manager.keyframes
-    matched_image = draw_matches(frame1, frame2)
+    # frame1,frame2 = app.kf_manager.keyframes
+    # matched_image = draw_matches(frame1, frame2)
 
-    plt.imshow(matched_image)
-    plt.show()
+    # plt.imshow(matched_image)
+    # plt.show()
 
 
     # img2 = cv2.drawKeypoints(frame.image, frame.keypoints, None, color=(0,255,0), flags=0)
