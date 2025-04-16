@@ -24,7 +24,7 @@ class CameraExtrinsicEstimation:
     def __init__(self) -> None:
         self.SLAM = SLAM()
         self.kf_manager = KeyframeManager(0, 0)
-        self.images = []
+        self.images: list[Frame] = []
 
         image1 = cv2.imread('test.png', cv2.IMREAD_GRAYSCALE)
         frame1 = Frame(0, image1)
@@ -61,7 +61,8 @@ class CameraExtrinsicEstimation:
             image.set_features(keypoints, descriptors)
             pose = Pose3()
             is_keyframe = self.kf_manager.determine_keyframe(pose)
-            if is_keyframe: self.kf_manager.add_keyframe(image)
+            if is_keyframe:
+                self.kf_manager.add_keyframe(image)
         
 
 
