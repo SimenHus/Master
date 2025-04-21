@@ -1,11 +1,13 @@
 
 from gtsam import ISAM2Params, ISAM2
 from gtsam import NonlinearFactorGraph, Values, Symbol
-from gtsam import PriorFactorPose3, BetweenFactorPose3, Pose3, Point3
+from gtsam import PriorFactorPose3, BetweenFactorPose3
 from gtsam import noiseModel
 from gtsam.symbol_shorthand import X, L, T
 
-from src.factors import CameraExtrinsicFactor
+import numpy as np
+from src.factors import CameraExtrinsicFactor, CameraExtrinsicPixelFactor
+from src.motion import Pose3Noise, Pose3, Point3, CameraNoise
 
 class SLAM:
     def __init__(self) -> None:
@@ -29,16 +31,17 @@ class SLAM:
         self.isam = ISAM2(parameters)
 
 
-    def odometry_measurement(self, from_id: int, to_id: int, odometry: Pose3, odometry_noise: noiseModel) -> None:
-        self.graph.push_back(BetweenFactorPose3(X(from_id), X(to_id), odometry, odometry_noise))
+    def odometry_measurement(self, from_id: int, to_id: int, odometry: Pose3, odometry_noise: Pose3Noise) -> None:
+        self.graph.push_back(BetweenFactorPose3(X(from_id), X(to_id), odometry, odometry_noise.noise_model()))
     
-    def pose_measurement(self, pose_id: int, measurement: Pose3, meaurement_noise: noiseModel) -> None:
-        self.graph.push_back(PriorFactorPose3(X(pose_id), measurement, meaurement_noise))
+    def pose_measurement(self, pose_id: int, measurement: Pose3, meaurement_noise: Pose3Noise) -> None:
+        self.graph.push_back(PriorFactorPose3(X(pose_id), measurement, meaurement_noise.noise_model()))
         self.new_nodes.insert(X(pose_id), measurement)
 
 
-    def landmark_measurement(self, pose_id: int, landmark_id: int, landmark_position_estimate: Point3, pixels: tuple, measurement_noise: noiseModel) -> None:
-        self.graph.push_back(CameraExtrinsicFactor(T(1), X(pose_id), L(landmark_id), pixels, measurement_noise))
+    def landmark_measurement(self, pose_id: int, landmark_id: int, landmark_position_estimate: Point3, camera_intrinsics: np.ndarray, pixels: tuple, measurement_noise: CameraNoise) -> None:
+        # self.graph.push_back(CameraExtrinsicFactor(T(1), X(pose_id), L(landmark_id), pixels, measurement_noise.noise_model()))
+        self.graph.push_back(CameraExtrinsicPixelFactor(T(1), X(pose_id), L(landmark_id), camera_intrinsics, pixels, measurement_noise.noise_model()))
         node_exists = self.check_node_exists(L(landmark_id))
         if node_exists: return
         self.new_nodes.insert(L(landmark_id), landmark_position_estimate)

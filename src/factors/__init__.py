@@ -1,1 +1,2 @@
 from .CameraExtrinsicFactor_old import CameraExtrinsicFactor
+from .CameraExtrinsicPixelFactor import CameraExtrinsicPixelFactor
