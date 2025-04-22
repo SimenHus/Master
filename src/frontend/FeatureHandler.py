@@ -1,6 +1,12 @@
 import cv2
 
 from src.common import Frame
+from dataclasses import dataclass
+
+@dataclass
+class Feature:
+    id: int
+    descriptor: list
 
 class FeatureHandler:
     orb = cv2.ORB.create()

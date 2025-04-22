@@ -1,102 +1,130 @@
 
-import gtsam
-from gtsam import ISAM2Params, ISAM2, Marginals
-from gtsam import NonlinearFactorGraph, Values, Symbol
-from gtsam import PriorFactorPose3, BetweenFactorPose3, BearingRangeFactor3D, PriorFactorPoint3, Pose3, Point3, Rot3, GPSFactor
-from gtsam import noiseModel, LevenbergMarquardtOptimizer, DoglegOptimizer
-from gtsam.symbol_shorthand import X, L, T
+import numpy as np
+import cv2
+
+import glob
+import csv
+
+import json
+
+from queue import Queue
 
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
 
-from Visualization.GraphVisualization import FactorGraphVisualization
-from Visualization.PlotVisualization import plot_graph3D
-
-from Simulation.factor import CameraExtrinsicFactorAlt
-
 from src.backend import SLAM
+from src.frontend import FeatureHandler, KeyframeManager
+from src.frontend import FrontendMain
+from src.common import Frame, CameraMeasurement, VesselMeasurement
+from src.models import CameraModel
+from src.visualization import draw_matches
+
+from src.visualization.GraphVisualization import FactorGraphVisualization
+from src.visualization.PlotVisualization import plot_graph3D
 
 
-slam_fg = SLAM()
+def crude_data_loading(path) -> list[CameraMeasurement]: # For KCC
+    images = path + '/*.jpg'
+    json_files = path + '/*.json'
+
+    list_of_images = glob.glob(images)
+    list_of_jsons = glob.glob(json_files)
+
+    result = []
+    n = 10
+    for i, (image_file, json_file) in enumerate(zip(list_of_images[:n], list_of_jsons[:n])):
+        image = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
+        with open(json_file, 'r') as f:
+            json_data = json.load(f)
+
+        vessel_measurement = VesselMeasurement.from_json(json_data)
+        camera_measurement = CameraMeasurement(0, Frame(image), vessel_measurement, vessel_measurement.timestamp)
+
+        result.append(camera_measurement)
+
+    return result
 
 
-landmarks_world = [
-    Point3(2, 0, 0),
-    Point3(-2, 0, 0)
-]
 
-rotation_gt = [ # Construct ground truth rotations from quaternion
-    Rot3(1, 0, 0, 0),
-    Rot3(1, 0, 0, 0),
-    Rot3(1, 0, 0, 0)
-]
+class CameraExtrinsicEstimation:
 
-position_gt = [
-    Point3(0, 0, 0),
-    Point3(0, 1, 0),
-    Point3(0, 2, 0)
-]
+    def __init__(self) -> None:
+        base_folder = '/mnt/c/Users/shustad/Desktop/Skole/Prosjektoppgave/data/osl'
+        data_folder = base_folder + '/2024-02-08/2024-02-08-14/Cam1/Lens0'
 
-position_noisy = [
-    Point3(0.2, -0.1, 0.1),
-    Point3(-0.1, 0.3, -0.3),
-    Point3(0.2, -0.1, -0.1)
-]
+        dataloader_file = base_folder + '/dataloader.json'
+        
+        with open(dataloader_file, 'r') as f: camera_dict = json.load(f)['Cam1']['Lens0']
+        self.camera_queue = Queue()
+        camera = CameraModel.from_json(camera_dict)
+        self.cameras = [camera]
 
-position_noise = noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1])
-pose_noise = noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1, 0.05, 0.05, 0.05])
 
-odometry = Pose3(Rot3(), Point3(0, 1, 0))
-odometry_noise = noiseModel.Diagonal.Sigmas([0.2, 0.2, 0.2, 0.1, 0.1, 0.1]) # Odometry noise model
+        self.SLAM = SLAM()
+        self.frontend = FrontendMain(self.camera_queue, self.cameras)
+        self.kf_manager = KeyframeManager(0, 0)
+        self.images: list[Frame] = []
 
-pos = position_gt[0]
-rot = rotation_gt[0]
+        # data_folder = '/mnt/c/Users/simen/Desktop/Prog/Dataset/mav0/cam0/data'
+        # image_paths = glob.glob('C:\Users\simen\Desktop\Prog\Dataset\mav0\cam0\data')
+        # image_csv = '/mnt/c/Users/simen/Desktop/Prog/Dataset/mav0/cam0/data.csv'
 
-slam_fg.pose_measurement(1, Pose3(rot, pos), pose_noise)
+        
+        loaded_data = crude_data_loading(data_folder)
+        self.camera_measurements: list[CameraMeasurement] = loaded_data
 
-for i in range(1, len(position_gt)):
-    pos = position_gt[i] # Include noise in inital estimates
-    rot = rotation_gt[i]
-    slam_fg.pose_measurement(i+1, Pose3(rot, pos), pose_noise)
-    slam_fg.odometry_measurement(i, i+1, odometry, odometry_noise)
-    slam_fg.optimize()
 
-camera_pos = Point3(1, 1, 1)
-camera_rot = Rot3(1, 0, 0, 0)
-camera_extrinsics = Pose3(camera_rot, camera_pos)
 
-extrinsic_factor_noise = noiseModel.Diagonal.Sigmas([0.1, 0.1, 0.1])
-slam_fg.landmark_measurement(1, 1, landmarks_world[0], (Pose3(rotation_gt[0], position_gt[0]).compose(camera_extrinsics)).transformTo(landmarks_world[0]), extrinsic_factor_noise)
-slam_fg.optimize()
-slam_fg.landmark_measurement(2, 1, landmarks_world[0], (Pose3(rotation_gt[1], position_gt[1]).compose(camera_extrinsics)).transformTo(landmarks_world[0]), extrinsic_factor_noise)
-slam_fg.optimize()
-slam_fg.landmark_measurement(2, 2, landmarks_world[1], (Pose3(rotation_gt[1], position_gt[1]).compose(camera_extrinsics)).transformTo(landmarks_world[1]), extrinsic_factor_noise)
-slam_fg.optimize()
-slam_fg.landmark_measurement(3, 2, landmarks_world[1], (Pose3(rotation_gt[2], position_gt[2]).compose(camera_extrinsics)).transformTo(landmarks_world[1]), extrinsic_factor_noise)
-slam_fg.optimize()
+    def run(self) -> None:
+
+        # for image in self.images:
+        #     keypoints, descriptors = FeatureHandler.extract_features(image)
+        #     image.set_features(keypoints, descriptors)
+        #     pose = Pose3()
+        #     is_keyframe = self.kf_manager.determine_keyframe(pose)
+        #     if is_keyframe:
+        #         self.kf_manager.add_keyframe(image)
+
+        for i, camera_meas in enumerate(self.camera_measurements):
+            id = i + 1
+            frame = Frame(id, camera_meas.image)
+            keypoints, descriptors = FeatureHandler.extract_features(frame)
+            frame.set_features(keypoints, descriptors)
+
+            pose = camera_meas.latest_vessel_measurement.as_pose()
+            pose_noise = camera_meas.latest_vessel_measurement.pose_noise()
+            is_keyframe = self.kf_manager.determine_keyframe(pose)
+            if is_keyframe or True:
+                self.kf_manager.add_keyframe(frame)
+                self.SLAM.pose_measurement(id, pose, pose_noise)
+                landmark_pixels = frame.keypoints[0].pt
+                pixel_noise = self.cameras[0].noise_model.cov()
+                predicted_pos = [100, 0, 0]
+                self.SLAM.landmark_measurement(id, id, predicted_pos, self.K, landmark_pixels, pixel_noise)
+                if i > 0:
+                    odom = pose.between(self.camera_measurements[i-1].latest_vessel_measurement.as_pose())
+                    odom_noise = pose_noise
+                    self.SLAM.odometry_measurement(id - 1, id, odom, odom_noise)
+                    self.SLAM.optimize()
         
 
-# result = LevenbergMarquardtOptimizer(graph, initial).optimize()
-result = slam_fg.current_estimate()
+if __name__ == '__main__':
+    app = CameraExtrinsicEstimation()
+    app.run()
 
-fig = plt.figure()
-ax = fig.add_subplot(projection='3d')
-# origins = np.array([(node).translation() for node in sim.trajectory.trajectory])
+    frame1,frame2 = app.kf_manager.keyframes[:2]
+    matched_image = draw_matches(frame1, frame2)
 
-ax.grid()
-ax.set_xlabel('x')
-ax.set_ylabel('y')
-ax.set_zlabel('z')
-ax.set_xlim([-1, 1])
-ax.set_ylim([-1, 3])
-ax.set_zlim([-1, 1])
+    output_folder = './'
+    FactorGraphVisualization.draw_factor_graph(output_folder, app.SLAM.graph, app.SLAM.current_estimate())
+    print(app.SLAM.current_estimate())
 
+    # plt.imshow(matched_image)
+    # plt.show()
 
-print(result)
+    # img2 = cv2.drawKeypoints(frame.image, frame.keypoints, None, color=(0,255,0), flags=0)
+    # plt.imshow(img2)
+    # plt.show()
 
-
-graph = slam_fg.graph
-FactorGraphVisualization.draw_factor_graph('./Output/', graph, result)
-plot_graph3D(graph, result, ax=ax, draw_cov=False)
-plt.show()
+    exit()

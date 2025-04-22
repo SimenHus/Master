@@ -1,11 +1,18 @@
 
 from src.motion import Pose3, Rot3, Point3, Pose3Noise
+from src.common import Frame
+
+from enum import Enum
 from dataclasses import dataclass
 
 import numpy as np
 
 @dataclass
-class VesselMeasurement:
+class MeasurementBaseClass:
+    timestamp: str
+
+@dataclass
+class VesselMeasurement(MeasurementBaseClass):
     attitude: np.ndarray[3]
     att_rate: np.ndarray[3]
     att_error: np.ndarray[3]
@@ -16,7 +23,6 @@ class VesselMeasurement:
     pos_error: np.ndarray[3]
 
     heave: float
-    timestamp: str
 
     def as_pose(self) -> Pose3:
         pos = Point3(*self.position)
@@ -44,9 +50,22 @@ class VesselMeasurement:
             timestamp = json_dict['meas_time']
         )
 
-    
 @dataclass
-class CameraMeasurement:
-    image: np.ndarray
+class CameraMeasurement(MeasurementBaseClass):
+    camera_id: int
+    frame: Frame
     latest_vessel_measurement: VesselMeasurement
-    timestamp: str
+
+
+class MeasurementType(Enum):
+    UNKNOWN = 0
+    VESSEL = 1
+    CAMERA = 2
+
+class MeasurementIdentifier:
+    @staticmethod
+    def identify(measurement: MeasurementBaseClass) -> MeasurementType:
+        
+        if type(measurement) == CameraMeasurement: return MeasurementType.CAMERA
+        if type(measurement) == VesselMeasurement: return MeasurementType.VESSEL
+        return MeasurementType.UNKNOWN

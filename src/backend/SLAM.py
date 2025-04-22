@@ -7,7 +7,8 @@ from gtsam.symbol_shorthand import X, L, T
 
 import numpy as np
 from src.factors import CameraExtrinsicFactor, CameraExtrinsicPixelFactor
-from src.motion import Pose3Noise, Pose3, Point3, CameraNoise
+from src.motion import Pose3Noise, Pose3, Point3
+from src.models import CameraModel
 
 class SLAM:
     def __init__(self) -> None:
@@ -39,9 +40,9 @@ class SLAM:
         self.new_nodes.insert(X(pose_id), measurement)
 
 
-    def landmark_measurement(self, pose_id: int, landmark_id: int, landmark_position_estimate: Point3, camera_intrinsics: np.ndarray, pixels: tuple, measurement_noise: CameraNoise) -> None:
+    def landmark_measurement(self, pose_id: int, landmark_id: int, landmark_position_estimate: Point3, pixels: tuple, camera: CameraModel) -> None:
         # self.graph.push_back(CameraExtrinsicFactor(T(1), X(pose_id), L(landmark_id), pixels, measurement_noise.noise_model()))
-        self.graph.push_back(CameraExtrinsicPixelFactor(T(1), X(pose_id), L(landmark_id), camera_intrinsics, pixels, measurement_noise.noise_model()))
+        self.graph.push_back(CameraExtrinsicPixelFactor(T(1), X(pose_id), L(landmark_id), camera.K, pixels, camera.noise_model.cov()))
         node_exists = self.check_node_exists(L(landmark_id))
         if node_exists: return
         self.new_nodes.insert(L(landmark_id), landmark_position_estimate)
@@ -61,5 +62,6 @@ class SLAM:
         for _ in range(extra_updates): self.isam.update()
 
 
+    @property
     def current_estimate(self) -> Values:
         return self.isam.calculateBestEstimate()

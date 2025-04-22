@@ -5,8 +5,8 @@ from dataclasses import dataclass
 
 @dataclass
 class Frame:
-    id: int
     image: np.ndarray
+    id: int = -1
     keypoints: tuple[KeyPoint] | None = None
     descriptors: np.ndarray | None = None
 
