@@ -1,11 +1,76 @@
 
 import gtsam # https://gtbook.github.io/gtsam-examples/intro.html
-from gtsam import Point3, Point2, Pose3, Pose2, Rot3, Rot2
+from gtsam import Point3, Point2, Pose3, Pose2, Rot3, Rot2, Symbol
 import numpy as np
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
+
+
+class PlotVisualization:
+
+    @staticmethod
+    def apply_default_settings(ax: plt.Axes) -> plt.Axes:
+        ax.grid()
+        ax.legend()
+        return ax
+
+    @staticmethod
+    def __get_poses(values: gtsam.Values) -> list[Pose3]:
+        poses = gtsam.utilities.allPose3s(values)
+        keys = poses.keys()
+        result = []
+        for key in keys:
+            if chr(Symbol(key).chr()) != 'x': continue
+            result.append(poses.atPose3(key))
+            
+        return result
+    
+    @classmethod
+    def __get_logmap(clc, values: gtsam.Values) -> list[np.ndarray[6]]:
+        return  np.array([Pose3.Logmap(pose) for pose in clc.__get_poses(values)])
+
+    @classmethod
+    def __plot_angle(clc, time: np.ndarray[1], values: gtsam.Values, dim = 0, label = '', ax: plt.Axes = None) -> plt.Axes:
+        if not ax: fig, ax = plt.subplots()
+        trajectory = clc.__get_logmap(values)
+        att = trajectory[:, :3] * 180/np.pi
+        ax.plot(time, att[:, dim], label=label)
+        return ax
+    
+    @classmethod
+    def __plot_position(clc, time: np.ndarray[1], values: gtsam.Values, dim = 0, label = '', ax: plt.Axes = None) -> plt.Axes:
+        if not ax: fig, ax = plt.subplots()
+        trajectory = clc.__get_logmap(values)
+        pos = trajectory[:, 3:]
+        ax.plot(time, pos[:, dim], label=label)
+        return ax
+
+    @classmethod
+    def trajectory_roll(clc, time: np.ndarray[1], values: gtsam.Values, ax: plt.Axes = None) -> plt.Axes:
+        return clc.__plot_angle(time, values, dim=0, label='roll', ax=ax)
+
+    @classmethod
+    def trajectory_pitch(clc, time: np.ndarray[1], values: gtsam.Values, ax: plt.Axes = None) -> plt.Axes:
+        return clc.__plot_angle(time, values, dim=1, label='pitch', ax=ax)
+
+    @classmethod
+    def trajectory_yaw(clc, time: np.ndarray[1], values: gtsam.Values, ax: plt.Axes = None) -> plt.Axes:
+        return clc.__plot_angle(time, values, dim=2, label='yaw', ax=ax)
+
+    @classmethod
+    def trajectory_x(clc, time: np.ndarray[1], values: gtsam.Values, ax: plt.Axes = None) -> plt.Axes:
+        return clc.__plot_position(time, values, dim=0, label='x', ax=ax)
+    
+    @classmethod
+    def trajectory_y(clc, time: np.ndarray[1], values: gtsam.Values, ax: plt.Axes = None) -> plt.Axes:
+        return clc.__plot_position(time, values, dim=1, label='y', ax=ax)
+    
+    @classmethod
+    def trajectory_z(clc, time: np.ndarray[1], values: gtsam.Values, ax: plt.Axes = None) -> plt.Axes:
+        return clc.__plot_position(time, values, dim=2, label='z', ax=ax)
+
 
 def get_covariance_ellipsoid(pose: Pose3 | Pose2, cov, n_std: float = 2.0) -> np.ndarray:
     # Generate unit sphere

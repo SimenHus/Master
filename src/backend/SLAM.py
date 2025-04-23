@@ -24,7 +24,7 @@ class SLAM:
 
         prior = Pose3()
         prior_noise = noiseModel.Diagonal.Sigmas([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
-        self.graph.push_back(PriorFactorPose3(X(1), prior, prior_noise)) # Prior on x1
+        # self.graph.push_back(PriorFactorPose3(X(1), prior, prior_noise)) # Prior on x1
 
         parameters = ISAM2Params()
         parameters.setRelinearizeThreshold(0.1)

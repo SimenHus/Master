@@ -1,1 +1,1 @@
-from .Measurement import CameraMeasurement, VesselMeasurement, MeasurementType, MeasurementIdentifier
+from .Measurement import CameraMeasurement, VesselMeasurement, MeasurementType, MeasurementIdentifier, OdometryMeasurement

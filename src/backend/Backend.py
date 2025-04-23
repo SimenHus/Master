@@ -1,7 +1,7 @@
 
 from .SLAM import SLAM
 from src.measurements import MeasurementType, MeasurementIdentifier
-from src.measurements import VesselMeasurement, CameraMeasurement
+from src.measurements import VesselMeasurement, CameraMeasurement, OdometryMeasurement
 
 from queue import Queue
 from threading import Thread
@@ -34,11 +34,14 @@ class BackendMain(Thread):
 
 
     def handle_measurement(self, measurement) -> None:
-        measurement = measurement.latest_vessel_measurement
         meas_type = MeasurementIdentifier.identify(measurement)
         match meas_type:
             case MeasurementType.VESSEL: self.vessel_measurement(measurement)
-            case MeasurementType.CAMERA: pass
+            case MeasurementType.ODOMETRY: self.odometry_measurement(measurement)
+            case MeasurementType.CAMERA: self.vessel_measurement(measurement.latest_vessel_measurement)
+
+    def camera_measurement(self, measurement: CameraMeasurement) -> None:
+        pass
 
     def vessel_measurement(self, measurement: VesselMeasurement) -> None:
         pose = measurement.as_pose()
@@ -46,6 +49,12 @@ class BackendMain(Thread):
         self.SLAM.pose_measurement(self.timestep, pose, pose_noise)
         if self.timestep > 1: self.SLAM.optimize()
         self.timestep += 1
+
+    def odometry_measurement(self, measurement: OdometryMeasurement) -> None:
+        pose = measurement.as_pose()
+        pose_noise = measurement.pose_noise()
+        self.SLAM.odometry_measurement(self.timestep-1, self.timestep, pose, pose_noise)
+        # if self.timestep > 1: self.SLAM.optimize()
 
 
     def stop(self) -> None:

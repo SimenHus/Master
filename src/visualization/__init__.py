@@ -4,6 +4,9 @@ from src.frontend import FeatureHandler
 import cv2
 import numpy as np
 
+from .PlotVisualization import PlotVisualization
+from .GraphVisualization import FactorGraphVisualization
+
 def draw_matches(frame1: Frame, frame2: Frame) -> np.ndarray:
     matches = FeatureHandler.match_features(frame1, frame2)
     image = cv2.drawMatches(

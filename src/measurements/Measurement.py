@@ -13,20 +13,20 @@ class MeasurementBaseClass:
 
 @dataclass
 class VesselMeasurement(MeasurementBaseClass):
-    attitude: np.ndarray[3]
-    att_rate: np.ndarray[3]
-    att_error: np.ndarray[3]
+    attitude: np.ndarray[3] = np.array([0, 0, 0])
+    att_rate: np.ndarray[3] = np.array([0, 0, 0])
+    att_error: np.ndarray[3] = np.array([1, 1, 1])*1e6
 
-    position: np.ndarray[3]
-    velocity: np.ndarray[3]
-    acceleration: np.ndarray[3]
-    pos_error: np.ndarray[3]
+    position: np.ndarray[3] = np.array([0, 0, 0])
+    velocity: np.ndarray[3] = np.array([0, 0, 0])
+    acceleration: np.ndarray[3] = np.array([0, 0, 0])
+    pos_error: np.ndarray[3] = np.array([1, 1, 1])*1e6
 
-    heave: float
+    heave: float = 0
 
     def as_pose(self) -> Pose3:
         pos = Point3(*self.position)
-        rot = Rot3.RzRyRx(*self.attitude)
+        rot = Rot3.Expmap(self.attitude)
         pose = Pose3(rot, pos)
         return pose
     
@@ -39,13 +39,13 @@ class VesselMeasurement(MeasurementBaseClass):
         vessel_info = json_dict['own_vessel']
 
         return VesselMeasurement(
-            attitude = vessel_info['attitude'],
-            att_rate = vessel_info['attrate'],
-            att_error = vessel_info['atterror'],
-            position = vessel_info['position'],
-            velocity = vessel_info['velocity'],
-            acceleration = vessel_info['acceleration'],
-            pos_error = vessel_info['poserror'],
+            attitude = np.array(vessel_info['attitude']) * np.pi/180,
+            att_rate = np.array(vessel_info['attrate']) * np.pi/180,
+            att_error = np.array(vessel_info['atterror']) * np.pi/180,
+            position = np.array(vessel_info['position']),
+            velocity = np.array(vessel_info['velocity']),
+            acceleration = np.array(vessel_info['acceleration']),
+            pos_error = np.array(vessel_info['poserror']),
             heave = vessel_info['heave'],
             timestamp = json_dict['meas_time']
         )
@@ -56,11 +56,16 @@ class CameraMeasurement(MeasurementBaseClass):
     frame: Frame
     latest_vessel_measurement: VesselMeasurement
 
+@dataclass
+class OdometryMeasurement(VesselMeasurement):
+    pass
+
 
 class MeasurementType(Enum):
     UNKNOWN = 0
     VESSEL = 1
     CAMERA = 2
+    ODOMETRY = 3
 
 class MeasurementIdentifier:
     @staticmethod
@@ -68,4 +73,5 @@ class MeasurementIdentifier:
         
         if type(measurement) == CameraMeasurement: return MeasurementType.CAMERA
         if type(measurement) == VesselMeasurement: return MeasurementType.VESSEL
+        if type(measurement) == OdometryMeasurement: return MeasurementType.ODOMETRY
         return MeasurementType.UNKNOWN

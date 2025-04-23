@@ -23,7 +23,7 @@ from src.measurements import CameraMeasurement, VesselMeasurement
 from src.models import CameraModel
 
 from src.visualization import draw_matches
-from src.visualization.GraphVisualization import FactorGraphVisualization
+from src.visualization import FactorGraphVisualization, PlotVisualization
 from src.visualization.PlotVisualization import plot_graph3D
 
 
@@ -91,8 +91,9 @@ class CameraExtrinsicEstimation:
     def stop(self) -> None:
         self.running = False
 
-        while not self.frontend_queue.empty() or not self.backend_queue.empty(): sleep(0.1)
+        while not self.frontend_queue.empty(): sleep(0.1)
         self.frontend.stop()
+        while not self.backend_queue.empty(): sleep(0.1)
         self.backend.stop()
 
         self.frontend.join()
@@ -103,11 +104,30 @@ if __name__ == '__main__':
     app = CameraExtrinsicEstimation()
     app.start()
     app.stop()
-
+    
+    result = app.backend.SLAM.current_estimate
     output_folder = './'
-    FactorGraphVisualization.draw_factor_graph(output_folder, app.backend.SLAM.graph, app.backend.SLAM.current_estimate)
-    print(app.backend.SLAM.current_estimate)
+    FactorGraphVisualization.draw_factor_graph(output_folder, app.backend.SLAM.graph, result)
 
-    # print(app.frontend.)
+    size = result.size() - 1
+    timeseries = np.arange(size)
+    ground_truth = []
+    for meas in app.camera_measurements:
+        # pos = meas.latest_vessel_measurement.position
+        pos = meas.latest_vessel_measurement.attitude
+        ground_truth.append(pos)
+    while len(ground_truth) > size: ground_truth.pop()
+    ground_truth = np.array(ground_truth) * 180/np.pi
+
+
+    # ax = PlotVisualization.trajectory_x(timeseries, result)
+    ax = PlotVisualization.trajectory_roll(timeseries, result)
+    ax.plot(timeseries, ground_truth[:, 0], label='gt')
+    ax2 = PlotVisualization.trajectory_yaw(timeseries, result)
+    ax2.plot(timeseries, ground_truth[:, 2], label='gt')
+
+    PlotVisualization.apply_default_settings(ax)
+    PlotVisualization.apply_default_settings(ax2)
+    plt.show()
 
     exit()
