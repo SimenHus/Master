@@ -13,3 +13,7 @@ class Frame:
     def set_features(self, keypoints, descriptors) -> None:
         self.keypoints = keypoints
         self.descriptors = descriptors
+
+    @property
+    def features(self) -> list:
+        return self.keypoints, self.descriptors

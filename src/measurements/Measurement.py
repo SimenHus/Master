@@ -1,6 +1,7 @@
 
 from src.motion import Pose3, Rot3, Point3, Pose3Noise
 from src.common import Frame
+from src.util import TimeConversion
 
 from enum import Enum
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ import numpy as np
 
 @dataclass
 class MeasurementBaseClass:
-    timestamp: str
+    timestep: int
 
 @dataclass
 class VesselMeasurement(MeasurementBaseClass):
@@ -37,6 +38,7 @@ class VesselMeasurement(MeasurementBaseClass):
     @staticmethod
     def from_json(json_dict: dict) -> 'VesselMeasurement':
         vessel_info = json_dict['own_vessel']
+        timestep = TimeConversion.UTC_to_POSIX(json_dict['meas_time'])
 
         return VesselMeasurement(
             attitude = np.array(vessel_info['attitude']) * np.pi/180,
@@ -47,7 +49,7 @@ class VesselMeasurement(MeasurementBaseClass):
             acceleration = np.array(vessel_info['acceleration']),
             pos_error = np.array(vessel_info['poserror']),
             heave = vessel_info['heave'],
-            timestamp = json_dict['meas_time']
+            timestep = timestep
         )
 
 @dataclass

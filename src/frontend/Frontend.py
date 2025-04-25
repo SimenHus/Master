@@ -1,6 +1,7 @@
 
 from .FeatureHandler import FeatureHandler
 from .KeyframeManager import KeyframeManager
+from .DataAssociation import DataAssociation
 
 from threading import Thread
 from queue import Queue
@@ -20,6 +21,7 @@ class _CameraInstance:
     keyframe_manager: KeyframeManager
 
 class FrontendMain(Thread):
+    data_assoc = DataAssociation()
 
     def __init__(self, incoming_queue: Queue, outgoing_queue: Queue, cameras: list[CameraModel]) -> None:
         super().__init__()
@@ -81,7 +83,7 @@ class FrontendMain(Thread):
         is_keyframe = keyframe_manager.determine_keyframe(measurement)
         if not is_keyframe: return
 
-        if len(local_window) > 1:
+        if len(local_window) > 1: # Simulate odometry measurement
             pos = measurement.latest_vessel_measurement.position - keyframe_manager.keyframes[-1].latest_vessel_measurement.position
             rot = measurement.latest_vessel_measurement.attitude - keyframe_manager.keyframes[-1].latest_vessel_measurement.attitude
             pos_error = (measurement.latest_vessel_measurement.pos_error + keyframe_manager.keyframes[-1].latest_vessel_measurement.pos_error)**2
@@ -93,19 +95,7 @@ class FrontendMain(Thread):
         keyframe_manager.add_keyframe(measurement)
         self.outgoing_queue.put(measurement)
 
-        if len(keyframe_manager.keyframes) == 1:
-            for keypoint, descriptor in zip(keypoints, descriptors):
-                observation = LandmarkObservation(0, keypoint)
-                self.landmarks[self.next_landmark_id] = Landmark(self.next_landmark_id, descriptor)
-                self.landmarks[self.next_landmark_id].observations.append(observation)
-                self.next_landmark_id += 1
-        if len(keyframe_manager.keyframes) <= 1: return
-
-        prev_keyframe = keyframe_manager.keyframes[-1]
-        overlapping_landmarks = FeatureHandler.match_features(measurement.frame, prev_keyframe.frame)
-
-        # print(matches[0].queryIdx, matches[0].trainIdx, matches[0].distance)
-        # print(measurement.frame.descriptors[matches[0].queryIdx], local_window[-1].descriptors[matches[0].trainIdx])
+        self.data_assoc.associate_global(measurement)
 
 
 
