@@ -1,7 +1,7 @@
 
 
 from dataclasses import dataclass, field
-from src.motion import Point3
+from src.camera import Keypoint, Descriptor
 
 import numpy as np
 
@@ -9,14 +9,18 @@ import numpy as np
 class LandmarkObservation:
     camera_id: int
     timestep: int
-    pixels: tuple[int, int]
+    keypoint: Keypoint
 
 @dataclass
 class Landmark:
     id: int
-    descriptor: list
+    descriptor: Descriptor
     position: np.ndarray[3] = None
     observations: list[LandmarkObservation] = field(default_factory=list)
+
+    def add_observation(self, observation: list[LandmarkObservation] | LandmarkObservation) -> None:
+        if type(observation) == list: self.observations.extend(observation)
+        else: self.observations.append(observation)
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, Landmark): return False
@@ -24,4 +28,4 @@ class Landmark:
         return tuple(self.descriptor) == tuple(other.descriptor)
     
     def __hash__(self) -> int:
-        return hash(tuple(self.position))
+        return hash(tuple(self.descriptor))

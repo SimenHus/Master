@@ -8,7 +8,7 @@ from gtsam.symbol_shorthand import X, L, T
 import numpy as np
 from src.factors import CameraExtrinsicFactor, CameraExtrinsicPixelFactor
 from src.motion import Pose3Noise, Pose3, Point3
-from src.models import CameraModel
+from src.camera import CameraModel
 
 class SLAM:
     def __init__(self) -> None:

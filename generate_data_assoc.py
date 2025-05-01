@@ -14,9 +14,8 @@ matplotlib.use('TkAgg')
 
 from src.frontend import FrontendMain
 
-from src.common import Frame
 from src.measurements import CameraMeasurement, VesselMeasurement
-from src.models import CameraModel
+from src.camera import CameraModel, Frame
 
 from src.visualization import FactorGraphVisualization, PlotVisualization
 
@@ -41,8 +40,6 @@ def crude_data_loading(path) -> list[CameraMeasurement]: # For KCC
         result.append(camera_measurement)
 
     return result
-
-
 
 class Application:
 
@@ -84,11 +81,14 @@ class Application:
         self.frontend.stop()
 
         self.frontend.join()
+        while not self.backend_queue.empty():
+            print(self.backend_queue.get())
 
 
 if __name__ == '__main__':
     app = Application()
     app.start()
     app.stop()
+
 
     exit()

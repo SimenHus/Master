@@ -20,6 +20,9 @@ class BackendMain(Thread):
         self.daemon = True
 
 
+        self.pose_map = {}
+
+
     def run(self) -> None:
         while self.running:
             
@@ -38,10 +41,15 @@ class BackendMain(Thread):
         match meas_type:
             case MeasurementType.VESSEL: self.vessel_measurement(measurement)
             case MeasurementType.ODOMETRY: self.odometry_measurement(measurement)
-            case MeasurementType.CAMERA: self.vessel_measurement(measurement.latest_vessel_measurement)
+            case MeasurementType.CAMERA: self.camera_measurement(measurement)
 
     def camera_measurement(self, measurement: CameraMeasurement) -> None:
-        pass
+        camera_model = measurement.camera_model
+        pose_id = self.pose_map[measurement.timestep]
+
+        for landmark in measurement.landmarks:
+            pixels = landmark.observations[0].keypoint.pt
+            self.SLAM.landmark_measurement(pose_id, landmark.id, landmark.position, pixels, camera_model)
 
     def vessel_measurement(self, measurement: VesselMeasurement) -> None:
         pose = measurement.as_pose()
@@ -49,6 +57,8 @@ class BackendMain(Thread):
         self.SLAM.pose_measurement(self.timestep, pose, pose_noise)
         if self.timestep > 1: self.SLAM.optimize()
         self.timestep += 1
+
+        self.pose_map[measurement.timestep] = self.timestep - 1
 
     def odometry_measurement(self, measurement: OdometryMeasurement) -> None:
         pose = measurement.as_pose()

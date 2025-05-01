@@ -87,7 +87,6 @@ class CameraExtrinsicPixelFactor(CustomFactor):
         T_cam_landmark = T_cam.transformTo(landmark, H_cam, H_p) # Landmark in camera frame
         projection = self.camera_intrinsics @ T_cam_landmark
         prediction = projection[:2] / projection[2]
-        print(prediction)
 
         error = prediction - self.measurement
 

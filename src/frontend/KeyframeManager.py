@@ -1,7 +1,7 @@
 import cv2
 import numpy as np
 
-from src.common import Frame
+from src.camera import Frame
 from src.motion import Pose3
 from src.measurements import CameraMeasurement
 

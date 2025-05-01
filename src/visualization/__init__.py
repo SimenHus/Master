@@ -1,6 +1,5 @@
 
-from src.common import Frame
-from src.frontend import FeatureHandler
+from src.camera import Feature, Frame
 import cv2
 import numpy as np
 
@@ -8,7 +7,7 @@ from .PlotVisualization import PlotVisualization
 from .GraphVisualization import FactorGraphVisualization
 
 def draw_matches(frame1: Frame, frame2: Frame) -> np.ndarray:
-    matches = FeatureHandler.match_features(frame1, frame2)
+    matches = Feature.match_features(frame1, frame2)
     image = cv2.drawMatches(
         frame1.image, frame1.keypoints,
         frame2.image, frame2.keypoints,

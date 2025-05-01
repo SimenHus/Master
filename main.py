@@ -18,9 +18,8 @@ matplotlib.use('TkAgg')
 from src.backend import BackendMain
 from src.frontend import FrontendMain
 
-from src.common import Frame
 from src.measurements import CameraMeasurement, VesselMeasurement
-from src.models import CameraModel
+from src.camera import CameraModel, Frame
 
 from src.visualization import draw_matches
 from src.visualization import FactorGraphVisualization, PlotVisualization
@@ -35,14 +34,14 @@ def crude_data_loading(path) -> list[CameraMeasurement]: # For KCC
     list_of_jsons = glob.glob(json_files)
 
     result = []
-    n = 10
+    n = 4
     for i, (image_file, json_file) in enumerate(zip(list_of_images[:n], list_of_jsons[:n])):
         image = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
         with open(json_file, 'r') as f:
             json_data = json.load(f)
 
         vessel_measurement = VesselMeasurement.from_json(json_data)
-        camera_measurement = CameraMeasurement(vessel_measurement.timestamp, 0, Frame(image), vessel_measurement)
+        camera_measurement = CameraMeasurement(vessel_measurement.timestep, 0, Frame(image), vessel_measurement)
 
         result.append(camera_measurement)
 

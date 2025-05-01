@@ -1,7 +1,8 @@
 
 from src.motion import Pose3, Rot3, Point3, Pose3Noise
-from src.common import Frame
+from src.camera import Frame, CameraModel
 from src.util import TimeConversion
+from src.common import Landmark
 
 from enum import Enum
 from dataclasses import dataclass
@@ -57,6 +58,8 @@ class CameraMeasurement(MeasurementBaseClass):
     camera_id: int
     frame: Frame
     latest_vessel_measurement: VesselMeasurement
+    landmarks: list[Landmark] | None = None
+    camera_model: CameraModel | None = None
 
 @dataclass
 class OdometryMeasurement(VesselMeasurement):

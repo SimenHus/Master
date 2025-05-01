@@ -1,12 +1,11 @@
 
-from .FeatureHandler import FeatureHandler
 from .KeyframeManager import KeyframeManager
 from .DataAssociation import DataAssociation
 
 from threading import Thread
 from queue import Queue
-from src.common import Frame, Landmark, LandmarkObservation
-from src.models import CameraModel
+from src.common import Landmark, LandmarkObservation
+from src.camera import CameraModel, Frame
 from src.measurements import MeasurementType, MeasurementIdentifier
 from src.measurements import VesselMeasurement, CameraMeasurement, OdometryMeasurement
 from time import sleep
@@ -74,8 +73,7 @@ class FrontendMain(Thread):
         local_window = camera_instance.local_window
         keyframe_manager = camera_instance.keyframe_manager
 
-        keypoints, descriptors = FeatureHandler.extract_features(measurement.frame)
-        measurement.frame.set_features(keypoints, descriptors)
+        measurement.frame.extract_features()
 
         local_window.append(measurement.frame)
         if len(local_window) > self.local_window_size: local_window.pop(0)
@@ -92,11 +90,13 @@ class FrontendMain(Thread):
             odometry = OdometryMeasurement('', attitude=rot, position=pos)
             # self.outgoing_queue.put(odometry)
 
+        detected_landmarks = self.data_assoc.associate_global(measurement)
+        measurement.landmarks = detected_landmarks
+
+        measurement.camera_model = self.cameras[0].model
         keyframe_manager.add_keyframe(measurement)
+        self.outgoing_queue.put(measurement.latest_vessel_measurement)
         self.outgoing_queue.put(measurement)
-
-        self.data_assoc.associate_global(measurement)
-
 
 
     def stop(self) -> None:
