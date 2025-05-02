@@ -8,7 +8,7 @@ from threading import Thread
 
 from time import sleep
 
-class BackendMain(Thread):
+class LoopClosing(Thread):
     
     def __init__(self, incoming_queue: Queue) -> None:
         super().__init__()

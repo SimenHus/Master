@@ -1,8 +1,6 @@
 
-from src.motion import Pose3, Rot3, Point3, Pose3Noise
-from src.camera import Frame, CameraModel
-from src.util import TimeConversion
-from src.common import Landmark
+from src.util import Geometry, Time
+from src.structs import Frame
 
 from enum import Enum
 from dataclasses import dataclass
@@ -26,20 +24,20 @@ class VesselMeasurement(MeasurementBaseClass):
 
     heave: float = 0
 
-    def as_pose(self) -> Pose3:
-        pos = Point3(*self.position)
-        rot = Rot3.Expmap(self.attitude)
-        pose = Pose3(rot, pos)
+    def as_pose(self) -> Geometry.SE3:
+        pos = Geometry.Point3(*self.position)
+        rot = Geometry.SO3.Expmap(self.attitude)
+        pose = Geometry.SE3(rot, pos)
         return pose
     
-    def pose_noise(self) -> Pose3Noise:
-        noise = Pose3Noise(self.pos_error, self.att_error)
+    def pose_noise(self) -> Geometry.SE3Noise:
+        noise = Geometry.SE3Noise(self.pos_error, self.att_error)
         return noise
     
     @staticmethod
     def from_json(json_dict: dict) -> 'VesselMeasurement':
         vessel_info = json_dict['own_vessel']
-        timestep = TimeConversion.UTC_to_POSIX(json_dict['meas_time'])
+        timestep = Time.TimeConversion.UTC_to_POSIX(json_dict['meas_time'])
 
         return VesselMeasurement(
             attitude = np.array(vessel_info['attitude']) * np.pi/180,
@@ -58,8 +56,6 @@ class CameraMeasurement(MeasurementBaseClass):
     camera_id: int
     frame: Frame
     latest_vessel_measurement: VesselMeasurement
-    landmarks: list[Landmark] | None = None
-    camera_model: CameraModel | None = None
 
 @dataclass
 class OdometryMeasurement(VesselMeasurement):
