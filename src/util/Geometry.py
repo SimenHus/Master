@@ -1,8 +1,14 @@
 
 
 import gtsam
-from gtsam import Point3
 import numpy as np
+
+
+class Point3:
+    pass
+
+class Point2:
+    pass
 
 class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
     pass

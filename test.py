@@ -3,13 +3,7 @@
 
 
 
-class A:
-    pass
+import cv2
 
 
-myvar = A()
-
-
-if myvar: print('ho')
-myvar = None
-if not myvar: print('la')
+print(cv2.Point3)

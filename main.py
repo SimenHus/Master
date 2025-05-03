@@ -1,6 +1,6 @@
 
 from src import System
-from src.structs import Frame, Camera, CameraMeasurement, VesselMeasurement
+from src.structs import Camera, CameraMeasurement, VesselMeasurement
 import glob
 import json
 import cv2
@@ -27,7 +27,7 @@ import cv2
 #     return result
 
 
-def crude_data_loading_frames(path, camera_id) -> list[Frame]:
+def crude_data_loading_frames(path, camera_id) -> list[list[cv2.Mat, int]]:
     images = path + '/*.jpg'
     json_files = path + '/*.json'
 
@@ -43,7 +43,7 @@ def crude_data_loading_frames(path, camera_id) -> list[Frame]:
 
         vessel_measurement = VesselMeasurement.from_json(json_data)
         
-        frame = Frame(image, 1, vessel_measurement.timestep)
+        frame = (image, vessel_measurement.timestep)
 
         result.append(frame)
 
@@ -66,12 +66,12 @@ class CameraExtrinsicCalibration:
         camera_id = 1
         self.camera = Camera.from_json(camera_id, camera_dict)
 
-        self.images: list[Frame] = crude_data_loading_frames(data_folder, camera_id)
+        self.images: list[list[cv2.Mat, int]] = crude_data_loading_frames(data_folder, camera_id)
 
     def start(self) -> None:
         
-        for image in self.images:
-            self.SLAM.track_monocular(image)
+        for (image, timestep) in self.images:
+            self.SLAM.track_monocular(image, timestep)
 
 
 
