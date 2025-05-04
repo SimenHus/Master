@@ -25,6 +25,7 @@ class Frame:
         self.reference_KF: KeyFrame | None = None
         self.keypoints: list[cv2.KeyPoint] = [] # Keypoints
         self.keypoint_und: list[cv2.KeyPoint] = [] # Undistorted keypoints
+        self.descriptors: list[cv2.Mat] = [] # List of descriptors
 
 
     @staticmethod

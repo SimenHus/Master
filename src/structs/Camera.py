@@ -46,4 +46,4 @@ class Camera:
 
 
     def reconstruct_with_two_views(self, keys1: list[cv2.KeyPoint], keys2: list[cv2.KeyPoint], matches12: list[int], T21: Geometry.SE3, P3D: list[Geometry.Point3], triangulated: list[bool]) -> bool:
-        
+        pass

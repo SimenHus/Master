@@ -1,5 +1,5 @@
 
-from src.structs import Frame, KeyFrame
+from src.structs import Frame, KeyFrame, Camera
 # from src.backend import LoopClosing
 # from src.mapping import LocalMapping
 from src.atlas import Atlas
@@ -42,6 +42,9 @@ class Tracker:
     init_id: int
 
     reference_KF: KeyFrame
+
+
+    camera = Camera() # More logic around camera should be added
 
     # Monocular initialization variables
     init_last_matches: list[int]
