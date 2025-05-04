@@ -15,7 +15,7 @@ class Matcher:
     
     def __init__(self, nnratio: float = 0.6, check_ori: bool = True) -> None:
         self.nnratio = nnratio
-        self.check_orientation = check_ori
+        self.check_orientation = check_ori<
 
     def search_for_initialization(self, frame1: Frame, frame2: Frame, prev_matched: list[Geometry.Point2], matches12: list[int]) -> int:
 
