@@ -40,10 +40,30 @@ from src.util import Geometry
 class Camera:
     next_id = 0
 
+    def __init__(self, parameters: list) -> None:
+        self.parameters = parameters # [fx, fy, cx, cy]
 
-    def __init__(self) -> None:
-        pass
+        self.id = Camera.next_id # Get ID
+        Camera.next_id += 1 # Update global ID counter
+        
 
+    @property
+    def K(self) -> np.ndarray[3, 3]:
+        return np.array([
+            [self.parameters[0], 0, self.parameters[2]],
+            [0, self.parameters[1], self.parameters[3]],
+            [0, 0, 1]
+        ])
 
-    def reconstruct_with_two_views(self, keys1: list[cv2.KeyPoint], keys2: list[cv2.KeyPoint], matches12: list[int], T21: Geometry.SE3, P3D: list[Geometry.Point3], triangulated: list[bool]) -> bool:
-        pass
+    def reconstruct_with_two_views(self, kps1: list[cv2.KeyPoint], kps2: list[cv2.KeyPoint], matches12: list[cv2.DMatch]) -> tuple[bool, Geometry.SE3, list[Geometry.Point3]]:
+        """Function to reconstruct two view geometry"""
+        # Define lists of matching points from the two images
+        im1_kps = [kps1[match.queryIdx] for match in matches12]
+        im2_kps = [kps2[match.trainIdx] for match in matches12]
+
+        E = cv2.findEssentialMat(im1_kps, im2_kps, self.K, cv2.RANSAC, 0.999, 1.0) # Get essential matrix using same points in the two images
+        retval, R, t, mask, triangulated_points = cv2.recoverPose(E, im1_kps, im2_kps, self.K) # Recover pose from the two images using the calculated essential matrix
+
+        T21 = Geometry.SE3(R, t)
+
+        return True, T21, triangulated_points

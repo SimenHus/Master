@@ -15,20 +15,21 @@ class Matcher:
     
     def __init__(self, nnratio: float = 0.6, check_ori: bool = True) -> None:
         self.nnratio = nnratio
-        self.check_orientation = check_ori<
+        self.check_orientation = check_ori
 
-    def search_for_initialization(self, frame1: Frame, frame2: Frame, prev_matched: list[Geometry.Point2], matches12: list[int]) -> int:
+    def search_for_initialization(self, frame1: Frame, frame2: Frame, prev_matched: list[Geometry.Point2]) -> list[cv2.DMatch]:
 
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches = bf.match(frame1.descriptors, frame2.descriptors)
         # Return matches sorted by distance (https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html)
         sorted_matches: list[cv2.Mat] = sorted(matches, key=lambda x: x.distance)
 
-        match_result = []
+        result = []
         for match in sorted_matches:
             if self.THRESH_LOW < match.distance < self.THRESH_HIGH:
-                match_result.append(match)
-        return len(match_result)
+                result.append(match)
+        
+        return result
     
 
 

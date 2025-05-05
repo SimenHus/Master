@@ -48,7 +48,7 @@ class Tracker:
 
     # Monocular initialization variables
     init_last_matches: list[int]
-    init_matches: list[int]
+    init_matches: list[cv2.DMatch]
     prev_matched: list[Geometry.Point2]
     init_P3D: list[Geometry.Point3]
     initial_frame: Frame
@@ -115,7 +115,7 @@ class Tracker:
         if not self.ready_to_initialize:
             self.initial_frame = Frame.copy(self.current_frame)
             self.last_frame = Frame.copy(self.current_frame)
-            self.prev_matched = [key_und.pt for key_und in self.current_frame.keypoint_und]
+            self.prev_matched = [key_und.pt for key_und in self.current_frame.keypoints_und]
 
             # fill(mvIniMatches.begin(),mvIniMatches.end(),-1);
             self.ready_to_initialize = True
@@ -123,25 +123,19 @@ class Tracker:
         
         # We are ready to initialize if we reach this point
         matcher = DataAssociation.Matcher(0.9, True)
-        matches = matcher.search_for_initialization(self.initial_frame, self.current_frame, self.prev_matched, self.init_matches, 100)
+        self.init_matches = matcher.search_for_initialization(self.initial_frame, self.current_frame, self.prev_matched)
 
-        if matches < 100: # Not enough matches
+        if self.init_matches < 100: # Not enough matches
             self.ready_to_initialize = False
             return
         
-        Tcw = Geometry.SE3()
-        triangulated: list[bool] = []
-
-        if self.camera.reconstruct_with_two_views(self.initial_frame.keypoint_und, self.current_frame.keypoint_und, self.init_matches, Tcw, self.init_P3D, triangulated):
-
-            for i in range(len(self.init_matches)):
-                if self.init_matches[i] >= 0 and not triangulated[i]:
-                    self.init_matches[i] = -1
-                    matches -= 1
+        # Attempt to reconstruct a scenario using two images. This will be the initial map
+        success, Tcw, self.init_P3D = self.camera.reconstruct_with_two_views(self.initial_frame.keypoints_und, self.current_frame.keypoints_und, self.init_matches)
+        if not success: return
             
-            self.initial_frame.set_pose()
-            self.current_frame.set_pose(Tcw)
-            self.create_initial_map_monocular()
+        self.initial_frame.set_pose(Geometry.SE3()) # Initialize the first point at the origin
+        self.current_frame.set_pose(Tcw) # Initialize first movement to be the second frame and the estimated movement
+        self.create_initial_map_monocular()
 
 
     def create_initial_map_monocular(self) -> None:

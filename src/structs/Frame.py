@@ -1,7 +1,7 @@
 
 
 from src.util import Geometry
-from .KeyFrame import KeyFrame
+from src.structs import MapPoint, KeyFrame
 import cv2
 
 from copy import copy
@@ -24,8 +24,9 @@ class Frame:
         self.Tcw: Geometry.SE3 | None = None
         self.reference_KF: KeyFrame | None = None
         self.keypoints: list[cv2.KeyPoint] = [] # Keypoints
-        self.keypoint_und: list[cv2.KeyPoint] = [] # Undistorted keypoints
+        self.keypoints_und: list[cv2.KeyPoint] = [] # Undistorted keypoints
         self.descriptors: list[cv2.Mat] = [] # List of descriptors
+        self.map_points: list[MapPoint] = []
 
 
     @staticmethod

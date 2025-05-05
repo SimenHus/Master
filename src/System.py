@@ -4,7 +4,7 @@ from src.frontend import Tracker
 # from src.mapping import LocalMapping
 # from src.backend import LoopClosing
 
-from src.structs import Frame, MapPoint, KeyPoint
+from src.structs import Frame, MapPoint
 from src.util import Geometry
 import cv2
 
@@ -15,7 +15,7 @@ class System:
     # Tracking states
     tracking_state: int
     tracked_map_points: list[MapPoint] # Tracked map points
-    tracked_key_points_und: list[KeyPoint] # Undistorted tracked keypoints
+    tracked_key_points_und: list[cv2.KeyPoint] # Undistorted tracked keypoints
 
 
     def __init__(self) -> None:
@@ -30,6 +30,6 @@ class System:
 
         self.tracking_state = self.tracker.state
         self.tracked_map_points = self.tracker.current_frame.map_points
-        self.tracked_key_points_und = self.tracker.current_frame.keys_und
+        self.tracked_key_points_und = self.tracker.current_frame.keypoints_und
 
         return Tcw
