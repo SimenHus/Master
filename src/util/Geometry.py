@@ -10,6 +10,12 @@ class Point3:
 class Point2:
     pass
 
+class Vector3:
+    @staticmethod
+    def normalize(vector: 'Vector3') -> 'Vector3':
+        """Returns normalized vector"""
+        return vector / np.linalg.norm(vector)
+
 class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
     pass
 

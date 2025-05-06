@@ -1,11 +1,19 @@
 
 import cv2
-from src.structs import Frame
-from src.util import Geometry
+
+
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from src.structs import Frame
+    from src.util import Geometry
 
 
 class Extractor:
     orb = cv2.ORB.create()
+
+    @classmethod
+    def extract(clc, image, mask) -> tuple[list[cv2.KeyPoint], list[cv2.Mat]]:
+        return clc.orb.detectAndCompute(image, mask)
 
 
 class Matcher:
@@ -17,7 +25,7 @@ class Matcher:
         self.nnratio = nnratio
         self.check_orientation = check_ori
 
-    def search_for_initialization(self, frame1: Frame, frame2: Frame, prev_matched: list[Geometry.Point2]) -> list[cv2.DMatch]:
+    def search_for_initialization(self, frame1: 'Frame', frame2: 'Frame', prev_matched: list['Geometry.Point2']) -> list[cv2.DMatch]:
 
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches = bf.match(frame1.descriptors, frame2.descriptors)

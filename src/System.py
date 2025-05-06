@@ -4,9 +4,10 @@ from src.frontend import Tracker
 # from src.mapping import LocalMapping
 # from src.backend import LoopClosing
 
-from src.structs import Frame, MapPoint
-from src.util import Geometry
+from src.structs import MapPoint
+from src.util import Geometry, Logging
 import cv2
+
 
 
 # See https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/src/System.cc
@@ -23,6 +24,8 @@ class System:
         # self.local_mapper = LocalMapping()
         # self.loop_closer = LoopClosing()
 
+        Logging.setup_logging()
+
     def track_monocular(self, image: cv2.Mat, timestep: int) -> Geometry.SE3:
         """Start of SLAM pipeline, incoming frames are sent here"""
         # Perform checks / changes with frame
@@ -33,3 +36,4 @@ class System:
         self.tracked_key_points_und = self.tracker.current_frame.keypoints_und
 
         return Tcw
+    

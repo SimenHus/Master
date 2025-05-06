@@ -1,18 +1,27 @@
 
 
 
+class Common:
+    a: int
+    b: int
+    c = 5
 
-from gtsam import Pose3, Rot3, Point3
+class A(Common):
 
-R = Rot3(0, 0, 0, 1)
-t = Point3(1, 2, 3)
-pose1 = Pose3()
-pose2 = Pose3(R, t)
+    def __init__(self):
+        self.a = 6
+        self.c = 3
+
+class B(Common):
+
+    def __init__(self):
+        self.b = 7
 
 
-class SE3(Pose3):
+first = A()
+second = B()
 
-    def set_rot(self, rot: Rot3) -> None:
-        self.
 
-pose1.
+# print(Common.a, Common.b, Common.c)
+print(Common.c)
+print(Common.a)
