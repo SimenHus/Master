@@ -1,7 +1,9 @@
 
 import cv2
 import numpy as np
-from src.util import Geometry
+from src.util import Geometry, DataAssociation
+
+from copy import copy
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -30,7 +32,7 @@ class MapPoint:
 
     def __init__(self, pos: 'Geometry.Vector3', ref_keyframe: 'KeyFrame', map: 'Map') -> None:
         
-        self.observations: dict[int: int] = {} # Keyframe ID: observation ID in keyframe
+        self.observations: dict['KeyFrame': int] = {} # Keyframe ID: observation ID in keyframe
         self.reference_keyframe = ref_keyframe
         self.map = map
 
@@ -43,6 +45,7 @@ class MapPoint:
         self.normal_vector = self.get_world_pos() - self.get_reference_keyframe().get_camera_center()
         self.normal_vector = Geometry.Vector3.normalize(self.normal_vector)
 
+    def get_map(self) -> 'Map': return self.map
 
     def set_world_pos(self, pos: 'Geometry.Point3') -> None: self.world_pos = pos
 
@@ -56,81 +59,60 @@ class MapPoint:
 
     def get_observations(self) -> dict: return self.observations
 
-    def add_observation(self, keyframe: 'KeyFrame', id: int) -> None: self.observations[keyframe.id] = id
+    def add_observation(self, keyframe: 'KeyFrame', id: int) -> None: self.observations[keyframe] = id
 
-    def update_normal_and_depth(self) -> None: pass
-#         {
-#     map<KeyFrame*,tuple<int,int>> observations;
-#     KeyFrame* pRefKF;
-#     Eigen::Vector3f Pos;
-#     {
-#         unique_lock<mutex> lock1(mMutexFeatures);
-#         unique_lock<mutex> lock2(mMutexPos);
-#         if(mbBad)
-#             return;
-#         observations = mObservations;
-#         pRefKF = mpRefKF;
-#         Pos = mWorldPos;
-#     }
+    def update_normal_and_depth(self) -> None:
+        observations = self.observations
+        pos = self.world_pos
+        reference_keyframe = self.reference_keyframe
 
-#     if(observations.empty())
-#         return;
+        if len(observations) == 0: return
 
-#     Eigen::Vector3f normal;
-#     normal.setZero();
-#     int n=0;
-#     for(map<KeyFrame*,tuple<int,int>>::iterator mit=observations.begin(), mend=observations.end(); mit!=mend; mit++)
-#     {
-#         KeyFrame* pKF = mit->first;
+        normal = np.zeros((3,))
 
-#         tuple<int,int> indexes = mit -> second;
-#         int leftIndex = get<0>(indexes), rightIndex = get<1>(indexes);
+        # Loop through all observations of MapPoint and create an averaged normal
+        for keyframe in observations.keys():
+            Ow_i = keyframe.get_camera_center()
+            normal_i = pos - Ow_i
+            normal = normal + Geometry.Vector3.normalize(normal_i)
 
-#         if(leftIndex != -1){
-#             Eigen::Vector3f Owi = pKF->GetCameraCenter();
-#             Eigen::Vector3f normali = Pos - Owi;
-#             normal = normal + normali / normali.norm();
-#             n++;
-#         }
-#         if(rightIndex != -1){
-#             Eigen::Vector3f Owi = pKF->GetRightCameraCenter();
-#             Eigen::Vector3f normali = Pos - Owi;
-#             normal = normal + normali / normali.norm();
-#             n++;
-#         }
-#     }
+        normal = normal / len(observations)
 
-#     Eigen::Vector3f PC = Pos - pRefKF->GetCameraCenter();
-#     const float dist = PC.norm();
+        dist = Geometry.Vector3.norm(pos - reference_keyframe.get_camera_center())
+        level = reference_keyframe.keypoints_und[observations[reference_keyframe]].octave
+        # level_scale_factor = reference_keyframe.scale_factors[level]
 
-#     tuple<int ,int> indexes = observations[pRefKF];
-#     int leftIndex = get<0>(indexes), rightIndex = get<1>(indexes);
-#     int level;
-#     if(pRefKF -> NLeft == -1){
-#         level = pRefKF->mvKeysUn[leftIndex].octave;
-#     }
-#     else if(leftIndex != -1){
-#         level = pRefKF -> mvKeys[leftIndex].octave;
-#     }
-#     else{
-#         level = pRefKF -> mvKeysRight[rightIndex - pRefKF -> NLeft].octave;
-#     }
+        # self.max_distance = dist * level_scale_factor
+        # self.min_distance = self.max_distance / reference_keyframe.scale_factors[-1]
+        self.normal_vector = normal
 
-#     //const int level = pRefKF->mvKeysUn[observations[pRefKF]].octave;
-#     const float levelScaleFactor =  pRefKF->mvScaleFactors[level];
-#     const int nLevels = pRefKF->mnScaleLevels;
+    def compute_distinct_descriptor(self) -> None:
+        """Loop through descriptors of all observations of this map point.
+        The descriptor with the lowest median to other points is chosen as descriptor"""
+        observations = self.observations
+        N = len(observations)
+        if N == 0: return
 
-#     {
-#         unique_lock<mutex> lock3(mMutexPos);
-#         mfMaxDistance = dist*levelScaleFactor;
-#         mfMinDistance = mfMaxDistance/pRefKF->mvScaleFactors[nLevels-1];
-#         mNormalVector = normal/n;
-#     }
-# }
-    # def compute_descriptor(self, descriptors):
-    #     """Average or median of descriptors from all observations"""
-    #     self.descriptor = np.mean(descriptors, axis=0)
+        descriptors = [kf.descriptors[index] for kf, index in observations.items()]
 
+        distances = np.zeros((N-1, N-1))
+        for i, desc_i in enumerate(descriptors[:-1]):
+            for j, desc_j in enumerate(descriptors[i+1:]):
+                dist_ij = DataAssociation.Matcher.descriptor_distance(desc_i, desc_j)
+                distances[i, j] = dist_ij
+                distances[j, i] = dist_ij
+
+        best_median = -1
+        best_id = -1
+
+        for i in range(N-1):
+            dists = distances[i, :]
+            dists = np.sort(dists)
+            median = np.median(dists)
+            if median < best_median or best_median == -1:
+                best_median = median
+                best_id = i
+        self.descriptor = copy(descriptors[best_id])
 
     # def __eq__(self, other) -> bool:
     #     if not isinstance(other, MapPoint): return False
@@ -144,13 +126,15 @@ class Map:
     next_id = 0
 
     def __init__(self, init_keyframe_id: int = 0) -> None:
-        self.init_keyframe_id = init_keyframe_id
         self.max_keyframe_id = init_keyframe_id
+        self.init_keyframe_id = init_keyframe_id
 
         self._is_in_use = False
 
-        self.map_points: set['MapPoint'] = set()
         self.keyframes: set['KeyFrame'] = set()
+        self.map_points: set['MapPoint'] = set()
+        self.keyframe_origins: set['KeyFrame'] = set()
+        self.reference_map_points: set['MapPoint'] = set()
 
         self.id = Map.next_id
         Map.next_id += 1
@@ -161,11 +145,12 @@ class Map:
             self.init_keyframe_id = keyframe.id
             self.init_keyframe = keyframe
             self.keyframe_lower_id = keyframe
-        
         self.keyframes.add(keyframe)
+        
         if keyframe.id > self.max_keyframe_id: self.max_keyframe_id = keyframe.id
         if keyframe.id < self.keyframe_lower_id.id: self.keyframe_lower_id = keyframe
 
+    def add_map_point(self, map_point: 'MapPoint') -> None: self.map_points.add(map_point)
 
     def get_original_keyframe(self) -> 'KeyFrame':
         return self.init_keyframe
@@ -187,3 +172,10 @@ class Map:
 
     def get_id(self) -> int:
         return self.id
+    
+    def map_points_in_map(self) -> int:
+        return len(self.map_points)
+    
+    def get_all_map_points(self) -> set['MapPoint']: return self.map_points
+
+    def set_reference_map_points(self, map_points: set['MapPoint']) -> None: self.reference_map_points = map_points

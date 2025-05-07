@@ -1,27 +1,19 @@
 
 
 
-class Common:
-    a: int
-    b: int
-    c = 5
-
-class A(Common):
+class A:
 
     def __init__(self):
-        self.a = 6
-        self.c = 3
+        self.a = 10
 
-class B(Common):
+    def change(self):
+        self.a = 4
 
-    def __init__(self):
-        self.b = 7
+myset = set()
+myset.add(A())
 
+for item in myset:
+    print(item.a)
+    item.change()
 
-first = A()
-second = B()
-
-
-# print(Common.a, Common.b, Common.c)
-print(Common.c)
-print(Common.a)
+for item in myset: print(item.a)

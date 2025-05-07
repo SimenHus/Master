@@ -5,6 +5,8 @@ from src.structs import Frame, KeyFrame, Camera, MapPoint
 from src.atlas import Atlas
 from src.util import Geometry, DataAssociation, Logging
 
+from copy import copy
+
 from enum import Enum
 import cv2
 
@@ -52,6 +54,12 @@ class Tracker:
         self.state = TrackerState.NO_IMAGES_YET
         self.atlas = Atlas()
         self.camera = Camera([458.654, 457.296, 367.215, 248.375], [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]) # More logic around camera should be added
+
+        self.init_extractor = DataAssociation.Extractor()
+        self.mono_extractor = DataAssociation.Extractor()
+
+        self.local_keyframes: set[KeyFrame] = set()
+        self.local_map_points: set[MapPoint] = set()
     
     def track(self) -> None:
         current_map = self.atlas.get_current_map()
@@ -138,7 +146,6 @@ class Tracker:
 
 
     def create_initial_map_monocular(self) -> None:
-        # self.state = TrackerState.OK
         self.logger.info('Creating initial map for monocular tracking')
         initial_keyframe = KeyFrame(self.initial_frame, self.atlas.get_current_map())
         current_keyframe = KeyFrame(self.current_frame, self.atlas.get_current_map())
@@ -159,7 +166,7 @@ class Tracker:
             map_point.add_observation(initial_keyframe, match.queryIdx)
             map_point.add_observation(current_keyframe, match.trainIdx)
 
-            map_point.compute_distinct_descriptors()
+            map_point.compute_distinct_descriptor()
             map_point.update_normal_and_depth()
 
             self.current_frame.map_points[match.trainIdx] = map_point
@@ -167,96 +174,48 @@ class Tracker:
 
             self.atlas.add_map_point(map_point)
 
+        # initial_keyframe.update_connections()
+        # current_keyframe.update_connections()
 
-#     // Update Connections
-#     pKFini->UpdateConnections();
-#     pKFcur->UpdateConnections();
+        self.logger.info(f'New map created with {self.atlas.map_points_in_map()} points')
+        
+        # Optimizer::GlobalBundleAdjustemnt(mpAtlas->GetCurrentMap(),20);
 
-#     std::set<MapPoint*> sMPs;
-#     sMPs = pKFini->GetMapPoints();
+        median_depth = initial_keyframe.compute_scene_median_depth()
+        inv_median_depth = 1.0 / median_depth
+        
+        # Scale initial baseline
+        Tc2w = current_keyframe.get_pose()
+        scaled_translation = Tc2w.translation() * inv_median_depth
+        current_keyframe.set_pose(Geometry.SE3(Tc2w.rotation(), scaled_translation))
 
-#     // Bundle Adjustment
-#     Verbose::PrintMess("New Map created with " + to_string(mpAtlas->MapPointsInMap()) + " points", Verbose::VERBOSITY_QUIET);
-#     Optimizer::GlobalBundleAdjustemnt(mpAtlas->GetCurrentMap(),20);
+        # Scale points
+        all_map_points = initial_keyframe.get_map_points()
+        for map_point in all_map_points:
+            map_point.set_world_pos(map_point.get_world_pos()*inv_median_depth)
+            map_point.update_normal_and_depth()
 
-#     float medianDepth = pKFini->ComputeSceneMedianDepth(2);
-#     float invMedianDepth;
-#     if(mSensor == System::IMU_MONOCULAR)
-#         invMedianDepth = 4.0f/medianDepth; // 4.0f
-#     else
-#         invMedianDepth = 1.0f/medianDepth;
+        # mpLocalMapper->InsertKeyFrame(pKFini);
+        # mpLocalMapper->InsertKeyFrame(pKFcur);
+        # mpLocalMapper->mFirstTs=pKFcur->mTimeStamp;
 
-#     if(medianDepth<0 || pKFcur->TrackedMapPoints(1)<50) // TODO Check, originally 100 tracks
-#     {
-#         Verbose::PrintMess("Wrong initialization, reseting...", Verbose::VERBOSITY_QUIET);
-#         mpSystem->ResetActiveMap();
-#         return;
-#     }
+        self.current_frame.set_pose(current_keyframe.get_pose())
+        self.last_keyframe_id = self.current_frame.id
+        self.last_keyframe = current_keyframe
+        
+        self.local_keyframes.add(initial_keyframe)
+        self.local_keyframes.add(current_keyframe)
+        self.local_map_points = copy(self.atlas.get_all_map_points())
+        self.reference_keyframe = current_keyframe
+        self.current_frame.reference_keyframe = current_keyframe
+        
+        self.last_frame = Frame.copy(self.current_frame)
 
-#     // Scale initial baseline
-#     Sophus::SE3f Tc2w = pKFcur->GetPose();
-#     Tc2w.translation() *= invMedianDepth;
-#     pKFcur->SetPose(Tc2w);
+        self.atlas.set_reference_map_points(self.local_map_points)
+        self.atlas.get_current_map().keyframe_origins.add(initial_keyframe)
+        self.state = TrackerState.OK
+        self.init_id = current_keyframe.id
 
-#     // Scale points
-#     vector<MapPoint*> vpAllMapPoints = pKFini->GetMapPointMatches();
-#     for(size_t iMP=0; iMP<vpAllMapPoints.size(); iMP++)
-#     {
-#         if(vpAllMapPoints[iMP])
-#         {
-#             MapPoint* pMP = vpAllMapPoints[iMP];
-#             pMP->SetWorldPos(pMP->GetWorldPos()*invMedianDepth);
-#             pMP->UpdateNormalAndDepth();
-#         }
-#     }
-
-#     if (mSensor == System::IMU_MONOCULAR)
-#     {
-#         pKFcur->mPrevKF = pKFini;
-#         pKFini->mNextKF = pKFcur;
-#         pKFcur->mpImuPreintegrated = mpImuPreintegratedFromLastKF;
-
-#         mpImuPreintegratedFromLastKF = new IMU::Preintegrated(pKFcur->mpImuPreintegrated->GetUpdatedBias(),pKFcur->mImuCalib);
-#     }
-
-
-#     mpLocalMapper->InsertKeyFrame(pKFini);
-#     mpLocalMapper->InsertKeyFrame(pKFcur);
-#     mpLocalMapper->mFirstTs=pKFcur->mTimeStamp;
-
-#     mCurrentFrame.SetPose(pKFcur->GetPose());
-#     mnLastKeyFrameId=mCurrentFrame.mnId;
-#     mpLastKeyFrame = pKFcur;
-#     //mnLastRelocFrameId = mInitialFrame.mnId;
-
-#     mvpLocalKeyFrames.push_back(pKFcur);
-#     mvpLocalKeyFrames.push_back(pKFini);
-#     mvpLocalMapPoints=mpAtlas->GetAllMapPoints();
-#     mpReferenceKF = pKFcur;
-#     mCurrentFrame.mpReferenceKF = pKFcur;
-
-#     // Compute here initial velocity
-#     vector<KeyFrame*> vKFs = mpAtlas->GetAllKeyFrames();
-
-#     Sophus::SE3f deltaT = vKFs.back()->GetPose() * vKFs.front()->GetPoseInverse();
-#     mbVelocity = false;
-#     Eigen::Vector3f phi = deltaT.so3().log();
-
-#     double aux = (mCurrentFrame.mTimeStamp-mLastFrame.mTimeStamp)/(mCurrentFrame.mTimeStamp-mInitialFrame.mTimeStamp);
-#     phi *= aux;
-
-#     mLastFrame = Frame(mCurrentFrame);
-
-#     mpAtlas->SetReferenceMapPoints(mvpLocalMapPoints);
-
-#     mpMapDrawer->SetCurrentCameraPose(pKFcur->GetPose());
-
-#     mpAtlas->GetCurrentMap()->mvpKeyFrameOrigins.push_back(pKFini);
-
-#     mState=OK;
-
-#     initID = pKFcur->mnId;
-# }
 
     def create_map_in_atlas(self) -> None:
         self.logger.info('Creating a new map in the atlas')
@@ -285,7 +244,121 @@ class Tracker:
         return False
 
     def track_local_map(self) -> bool:
-        return False
+        self.update_local_map()
+        self.search_local_points()
+# {
+
+#     // We have an estimation of the camera pose and some map points tracked in the frame.
+#     // We retrieve the local map and try to find matches to points in the local map.
+#     mTrackedFr++;
+
+#     UpdateLocalMap();
+#     SearchLocalPoints();
+
+#     // TOO check outliers before PO
+#     int aux1 = 0, aux2=0;
+#     for(int i=0; i<mCurrentFrame.N; i++)
+#         if( mCurrentFrame.mvpMapPoints[i])
+#         {
+#             aux1++;
+#             if(mCurrentFrame.mvbOutlier[i])
+#                 aux2++;
+#         }
+
+#     int inliers;
+#     if (!mpAtlas->isImuInitialized())
+#         Optimizer::PoseOptimization(&mCurrentFrame);
+#     else
+#     {
+#         if(mCurrentFrame.mnId<=mnLastRelocFrameId+mnFramesToResetIMU)
+#         {
+#             Verbose::PrintMess("TLM: PoseOptimization ", Verbose::VERBOSITY_DEBUG);
+#             Optimizer::PoseOptimization(&mCurrentFrame);
+#         }
+#         else
+#         {
+#             // if(!mbMapUpdated && mState == OK) //  && (mnMatchesInliers>30))
+#             if(!mbMapUpdated) //  && (mnMatchesInliers>30))
+#             {
+#                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastFrame ", Verbose::VERBOSITY_DEBUG);
+#                 inliers = Optimizer::PoseInertialOptimizationLastFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
+#             }
+#             else
+#             {
+#                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastKeyFrame ", Verbose::VERBOSITY_DEBUG);
+#                 inliers = Optimizer::PoseInertialOptimizationLastKeyFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
+#             }
+#         }
+#     }
+
+#     aux1 = 0, aux2 = 0;
+#     for(int i=0; i<mCurrentFrame.N; i++)
+#         if( mCurrentFrame.mvpMapPoints[i])
+#         {
+#             aux1++;
+#             if(mCurrentFrame.mvbOutlier[i])
+#                 aux2++;
+#         }
+
+#     mnMatchesInliers = 0;
+
+#     // Update MapPoints Statistics
+#     for(int i=0; i<mCurrentFrame.N; i++)
+#     {
+#         if(mCurrentFrame.mvpMapPoints[i])
+#         {
+#             if(!mCurrentFrame.mvbOutlier[i])
+#             {
+#                 mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
+#                 if(!mbOnlyTracking)
+#                 {
+#                     if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
+#                         mnMatchesInliers++;
+#                 }
+#                 else
+#                     mnMatchesInliers++;
+#             }
+#             else if(mSensor==System::STEREO)
+#                 mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint*>(NULL);
+#         }
+#     }
+
+#     // Decide if the tracking was succesful
+#     // More restrictive if there was a relocalization recently
+#     mpLocalMapper->mnMatchesInliers=mnMatchesInliers;
+#     if(mCurrentFrame.mnId<mnLastRelocFrameId+mMaxFrames && mnMatchesInliers<50)
+#         return false;
+
+#     if((mnMatchesInliers>10)&&(mState==RECENTLY_LOST))
+#         return true;
+
+
+#     if (mSensor == System::IMU_MONOCULAR)
+#     {
+#         if((mnMatchesInliers<15 && mpAtlas->isImuInitialized())||(mnMatchesInliers<50 && !mpAtlas->isImuInitialized()))
+#         {
+#             return false;
+#         }
+#         else
+#             return true;
+#     }
+#     else if (mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
+#     {
+#         if(mnMatchesInliers<15)
+#         {
+#             return false;
+#         }
+#         else
+#             return true;
+#     }
+#     else
+#     {
+#         if(mnMatchesInliers<30)
+#             return false;
+#         else
+#             return true;
+#     }
+# }
 
     def track_reference_keyframe(self) -> bool:
         return False
@@ -295,9 +368,10 @@ class Tracker:
         # Process image in necessary ways (grayscale etc)
         frame = image
 
-        # Maybe perform some checks if system is initialized?
-        # if self.state == TrackerState.NOT_INITIALIZED or self.state == TrackerState.NO_IMAGES_YET:
-        self.current_frame = Frame(frame, timestep, self.camera)
+        if self.state == TrackerState.NOT_INITIALIZED or self.state == TrackerState.NO_IMAGES_YET:
+            self.current_frame = Frame(frame, timestep, self.init_extractor, self.camera)
+        else:
+            self.current_frame = Frame(frame, timestep, self.mono_extractor, self.camera)
 
         if self.state == TrackerState.NO_IMAGES_YET:
             self.t0 = timestep
