@@ -4,7 +4,7 @@ import cv2
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from src.structs import Frame
+    from src.structs import Frame, KeyFrame, MapPoint
     from src.util import Geometry
 
 
@@ -42,6 +42,17 @@ class Matcher:
         
         return result
     
+    def map_points_by_descriptors(self, reference_frame: 'KeyFrame | Frame', other_frame: 'KeyFrame | Frame') -> dict[int, 'MapPoint']:
+        matches = self.match(reference_frame.descriptors, other_frame.descriptors)
+
+        result = {}
+        map_points: dict[int: 'MapPoint'] = reference_frame.get_map_point_matches()
+        for match in matches:
+            if not match.queryIdx in map_points: continue
+            map_point = map_points[match.queryIdx]
+            result[match.trainIdx] = map_point
+        return result
+
     @classmethod
     def match(clc, desc1: list[cv2.Mat], desc2: list[cv2.Mat]) -> list[cv2.DMatch]:
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)

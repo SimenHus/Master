@@ -21,24 +21,10 @@ class TrackerState(Enum):
 # and https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/include/Tracking.h#L138
 class Tracker:
     logger = Logging.get_logger('Tracker')
-    current_frame: Frame
-    last_frame: Frame
-
-    first_frame_id: int
-    initial_frame_id: int
-    last_init_frame_id: int
-    
-    t0: int
 
     # Pointers to other threads
     # loop_closing: LoopClosing
     # local_mapper: LocalMapping
-
-    created_map: bool
-    map_updated: bool
-
-    last_processed_state: int
-
 
     # Monocular initialization variables
     init_last_matches: list[int]
@@ -49,10 +35,10 @@ class Tracker:
     ready_to_init: bool = False
     set_init: bool
 
-    def __init__(self) -> None:
+    def __init__(self, atlas: Atlas) -> None:
         self.init_id, self.last_id = 0, 0
         self.state = TrackerState.NO_IMAGES_YET
-        self.atlas = Atlas()
+        self.atlas = atlas
         self.camera = Camera([458.654, 457.296, 367.215, 248.375], [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]) # More logic around camera should be added
 
         self.init_extractor = DataAssociation.Extractor()
@@ -60,38 +46,46 @@ class Tracker:
 
         self.local_keyframes: set[KeyFrame] = set()
         self.local_map_points: set[MapPoint] = set()
+        self.matches_inliers = 0
     
     def track(self) -> None:
-        current_map = self.atlas.get_current_map()
-        if not current_map:
-            self.logger.error('No active map found in atlas')
+        current_map = self.atlas.get_current_map() # Check if atlas contains a map, if not it is created
+        if not current_map: self.logger.error('No active map found in atlas')
 
+        # Sanity check if tracking has begun
         if self.state != TrackerState.NO_IMAGES_YET:
             if self.last_frame.timestep > self.current_frame.timestep: # Sanity check for timesteps
                 self.logger.error('Frame with timestep older than previous frame detected')
                 return
 
+        # Update state if tracker has received first image
         if self.state == TrackerState.NO_IMAGES_YET: self.state = TrackerState.NOT_INITIALIZED
 
-        self.last_processed_state = self.state # Update previous tracker state
+        # Initial state check and update complete, proceed with tracking
+        self.last_processed_state = self.state # Store current state before updated by tracking
 
 
         if self.state == TrackerState.NOT_INITIALIZED:
             self.monocular_initialization()
             if self.state != TrackerState.OK: # Not properly initialized
-                self.last_frame = Frame.copy(self.current_frame)
+                self.last_frame = Frame.clone(self.current_frame)
                 return
             
             self.first_frame_id = self.current_frame.id
             return
-
+        
+        # --------------------------------------------------------------------------
         # If system is not initialized, it will return before this statement
-        ok: bool = None # System is initialized
+        ok: bool = False # Variable to keep track of status of steps in current tracking cycle
 
         if not self.current_frame.reference_keyframe: # Check if reference keyframe exists for current frame
             self.current_frame.reference_keyframe = self.reference_keyframe # If no reference keyframe found, set tracker keyframe as reference
 
-        ok = self.track_local_map()
+        # Track and update current frame based on reference keyframe
+        ok = self.track_reference_keyframe()
+
+        # Frame tracking is ok, track map
+        if ok: ok = self.track_local_map()
 
         if ok: self.state = TrackerState.OK
 
@@ -100,12 +94,27 @@ class Tracker:
         if need_KF and ok:
             self.create_new_keyframe()
 
-        if not self.current_frame.reference_keyframe: # Check if reference keyframe exists for current frame
-            self.current_frame.reference_keyframe = self.reference_keyframe # If no reference keyframe found, set tracker keyframe as reference
-
-        self.last_frame = Frame.copy(self.current_frame)
+        self.last_frame = Frame.clone(self.current_frame)
 
 
+    def track_reference_keyframe(self) -> bool:
+        """Function to track current frame using reference keyframe"""
+        # self.current_frame.compute_BoW()
+        matcher = DataAssociation.Matcher()
+        map_points_matches = matcher.map_points_by_descriptors(self.reference_keyframe, self.current_frame)
+
+        self.current_frame.set_map_points(map_points_matches.values(), map_points_matches.keys())
+        for id, map_point in map_points_matches.items(): map_point.add_observation(self.current_frame, id) # Update observations in map point
+
+        # Logic here to set frame pose
+        self.current_frame.set_pose(self.last_frame.get_pose())
+
+        # Perform pose optimization to get better pose estimate???
+
+        # Logic here to remove outliers
+
+        match_threshold = 1
+        return len(map_points_matches) >= match_threshold
 
     def monocular_initialization(self) -> None:
         
@@ -117,8 +126,8 @@ class Tracker:
             return
 
         if not self.ready_to_init:
-            self.initial_frame = Frame.copy(self.current_frame)
-            self.last_frame = Frame.copy(self.current_frame)
+            self.initial_frame = Frame.clone(self.current_frame)
+            self.last_frame = Frame.clone(self.current_frame)
             self.prev_matched = [key_und.pt for key_und in self.current_frame.keypoints_und]
 
             self.ready_to_init = True
@@ -169,8 +178,7 @@ class Tracker:
             map_point.compute_distinct_descriptor()
             map_point.update_normal_and_depth()
 
-            self.current_frame.map_points[match.trainIdx] = map_point
-            self.current_frame.outlier[match.trainIdx] = False
+            self.current_frame.add_map_point(map_point, match.trainIdx)
 
             self.atlas.add_map_point(map_point)
 
@@ -209,7 +217,7 @@ class Tracker:
         self.reference_keyframe = current_keyframe
         self.current_frame.reference_keyframe = current_keyframe
         
-        self.last_frame = Frame.copy(self.current_frame)
+        self.last_frame = Frame.clone(self.current_frame)
 
         self.atlas.set_reference_map_points(self.local_map_points)
         self.atlas.get_current_map().keyframe_origins.add(initial_keyframe)
@@ -238,130 +246,84 @@ class Tracker:
 
 
     def create_new_keyframe(self) -> None:
-        pass # New keyframe logic
+        keyframe = KeyFrame(self.current_frame, self.atlas.get_current_map())
+
+        self.reference_keyframe = keyframe
+        self.current_frame.reference_keyframe = keyframe
+        if self.last_keyframe:
+            keyframe.previous_keyframe = self.last_keyframe
+            self.last_keyframe.next_keyframe = keyframe
+        else:
+            self.logger.error('No previous keyframe existing when attempting to create new')
+
+        self.last_keyframe_id = self.current_frame.id
+        self.last_keyframe = keyframe
+
+        self.atlas.add_keyframe(keyframe) # May need to be moved / removed
+
 
     def need_new_keyframe(self) -> bool:
-        return False
+        return True
+
+    def update_local_map(self) -> None:
+        self.update_local_keyframes()
+        self.update_local_points()
+
+
+    def update_local_keyframes(self) -> None:
+        
+        keyframe_counter: dict['KeyFrame': int] = {} # Keyframe: number of common map points
+
+        for map_point in self.last_frame.get_map_points(): # Loop through map points in previous frame
+            observations = map_point.get_observations() # Get map point observations (dict, keyframe: map point id in keyframe)
+            for keyframe in observations.keys(): # Loop through keyframes where the map point is observed
+                if not keyframe in keyframe_counter.keys(): keyframe_counter[keyframe] = 0 # Add keyframe to counter if not previously added
+                keyframe_counter[keyframe] += 1 # Increase count of seen map points in counter
+
+        max = 0
+        keyframe_max = None
+
+        self.local_keyframes.clear()
+
+        # All keyframes that observe a map point are included in the local map. Also check which keyframe shares most points
+        for keyframe, counter in keyframe_counter.items():
+            if counter > max:
+                max = counter
+                keyframe_max = keyframe
+            self.local_keyframes.add(keyframe)
+
+        # Logic to expand local window with relevant neighbouring frames can be added here
+        ###
+
+        if keyframe_max is not None:
+            self.reference_keyframe = keyframe_max
+            self.current_frame.reference_keyframe = self.reference_keyframe
+
+    def update_local_points(self) -> None:
+        """Update local map point variable with information from current local keyframes"""
+        self.local_map_points.clear()
+
+        for local_keyframe in self.local_keyframes:
+            for map_point in local_keyframe.get_map_points():
+                self.local_map_points.add(map_point)
+
+
+    def search_local_points(self) -> None:
+        pass
 
     def track_local_map(self) -> bool:
+        """Called when we have an estimation of camera pose and some map points are tracked in current frame.
+        Retrieve local map and try to find matches to points in local map"""
         self.update_local_map()
         self.search_local_points()
-# {
 
-#     // We have an estimation of the camera pose and some map points tracked in the frame.
-#     // We retrieve the local map and try to find matches to points in the local map.
-#     mTrackedFr++;
+        # Perform pose optimization
+        # optimizer.pose_optimization(self.current_frame)
 
-#     UpdateLocalMap();
-#     SearchLocalPoints();
+        self.matches_inliers = len(self.current_frame.get_map_points()) - len(self.current_frame.get_outlier_ids())
+        inlier_threshold = 1
+        return self.matches_inliers >= inlier_threshold
 
-#     // TOO check outliers before PO
-#     int aux1 = 0, aux2=0;
-#     for(int i=0; i<mCurrentFrame.N; i++)
-#         if( mCurrentFrame.mvpMapPoints[i])
-#         {
-#             aux1++;
-#             if(mCurrentFrame.mvbOutlier[i])
-#                 aux2++;
-#         }
-
-#     int inliers;
-#     if (!mpAtlas->isImuInitialized())
-#         Optimizer::PoseOptimization(&mCurrentFrame);
-#     else
-#     {
-#         if(mCurrentFrame.mnId<=mnLastRelocFrameId+mnFramesToResetIMU)
-#         {
-#             Verbose::PrintMess("TLM: PoseOptimization ", Verbose::VERBOSITY_DEBUG);
-#             Optimizer::PoseOptimization(&mCurrentFrame);
-#         }
-#         else
-#         {
-#             // if(!mbMapUpdated && mState == OK) //  && (mnMatchesInliers>30))
-#             if(!mbMapUpdated) //  && (mnMatchesInliers>30))
-#             {
-#                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastFrame ", Verbose::VERBOSITY_DEBUG);
-#                 inliers = Optimizer::PoseInertialOptimizationLastFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
-#             }
-#             else
-#             {
-#                 Verbose::PrintMess("TLM: PoseInertialOptimizationLastKeyFrame ", Verbose::VERBOSITY_DEBUG);
-#                 inliers = Optimizer::PoseInertialOptimizationLastKeyFrame(&mCurrentFrame); // , !mpLastKeyFrame->GetMap()->GetIniertialBA1());
-#             }
-#         }
-#     }
-
-#     aux1 = 0, aux2 = 0;
-#     for(int i=0; i<mCurrentFrame.N; i++)
-#         if( mCurrentFrame.mvpMapPoints[i])
-#         {
-#             aux1++;
-#             if(mCurrentFrame.mvbOutlier[i])
-#                 aux2++;
-#         }
-
-#     mnMatchesInliers = 0;
-
-#     // Update MapPoints Statistics
-#     for(int i=0; i<mCurrentFrame.N; i++)
-#     {
-#         if(mCurrentFrame.mvpMapPoints[i])
-#         {
-#             if(!mCurrentFrame.mvbOutlier[i])
-#             {
-#                 mCurrentFrame.mvpMapPoints[i]->IncreaseFound();
-#                 if(!mbOnlyTracking)
-#                 {
-#                     if(mCurrentFrame.mvpMapPoints[i]->Observations()>0)
-#                         mnMatchesInliers++;
-#                 }
-#                 else
-#                     mnMatchesInliers++;
-#             }
-#             else if(mSensor==System::STEREO)
-#                 mCurrentFrame.mvpMapPoints[i] = static_cast<MapPoint*>(NULL);
-#         }
-#     }
-
-#     // Decide if the tracking was succesful
-#     // More restrictive if there was a relocalization recently
-#     mpLocalMapper->mnMatchesInliers=mnMatchesInliers;
-#     if(mCurrentFrame.mnId<mnLastRelocFrameId+mMaxFrames && mnMatchesInliers<50)
-#         return false;
-
-#     if((mnMatchesInliers>10)&&(mState==RECENTLY_LOST))
-#         return true;
-
-
-#     if (mSensor == System::IMU_MONOCULAR)
-#     {
-#         if((mnMatchesInliers<15 && mpAtlas->isImuInitialized())||(mnMatchesInliers<50 && !mpAtlas->isImuInitialized()))
-#         {
-#             return false;
-#         }
-#         else
-#             return true;
-#     }
-#     else if (mSensor == System::IMU_STEREO || mSensor == System::IMU_RGBD)
-#     {
-#         if(mnMatchesInliers<15)
-#         {
-#             return false;
-#         }
-#         else
-#             return true;
-#     }
-#     else
-#     {
-#         if(mnMatchesInliers<30)
-#             return false;
-#         else
-#             return true;
-#     }
-# }
-
-    def track_reference_keyframe(self) -> bool:
-        return False
 
     def grab_image_monocular(self, image: cv2.Mat, timestep: int) -> Geometry.SE3:
 

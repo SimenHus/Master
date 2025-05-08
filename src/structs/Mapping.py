@@ -177,5 +177,6 @@ class Map:
         return len(self.map_points)
     
     def get_all_map_points(self) -> set['MapPoint']: return self.map_points
+    def get_all_keyframes(self) -> set['KeyFrame']: return self.keyframes
 
     def set_reference_map_points(self, map_points: set['MapPoint']) -> None: self.reference_map_points = map_points

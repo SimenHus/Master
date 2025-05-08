@@ -82,7 +82,7 @@ class CameraExtrinsicCalibration:
         # with open(dataloader_file, 'r') as f: camera_dict = json.load(f)['Cam1']['Lens0']
 
         # self.camera = Camera.from_json(camera_id, camera_dict)
-        n = 4
+        n = 20
         self.images: list[list[cv2.Mat, int]] = data_load_home(data_folder, n)
 
     def start(self) -> None:
@@ -90,9 +90,17 @@ class CameraExtrinsicCalibration:
         for (image, timestep) in self.images:
             self.SLAM.track_monocular(image, timestep)
 
+    def save_keyframe_traj(self, filename: 'str') -> None:
+        self.SLAM.save_keyframe_trajectory(filename)
+
+    def save_map_points(self, filename: 'str') -> None:
+        self.SLAM.save_map_points(filename)
 
 if __name__ == '__main__':
     app = CameraExtrinsicCalibration()
     app.start()
+
+    app.save_keyframe_traj('Trajectory')
+    app.save_map_points('MapPoints')
     
     exit()
