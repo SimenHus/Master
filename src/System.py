@@ -2,7 +2,7 @@
 
 from src.frontend import Tracker
 from src.atlas import Atlas
-import pickle
+import json
 # from src.mapping import LocalMapping
 # from src.backend import LoopClosing
 
@@ -28,7 +28,7 @@ class System:
         # self.local_mapper = LocalMapping()
         # self.loop_closer = LoopClosing()
 
-        Logging.setup_logging()
+        Logging.setup_logging('./debug')
 
     def track_monocular(self, image: cv2.Mat, timestep: int) -> Geometry.SE3:
         """Start of SLAM pipeline, incoming frames are sent here"""
@@ -41,21 +41,26 @@ class System:
 
         return Tcw
     
-    def save_keyframe_trajectory(self, filename: 'str') -> None:
+    def save_keyframes(self, filename: 'str') -> None:
         keyframes = self.atlas.get_all_keyframes()
+        keyframes = sorted(keyframes, key=lambda kf: kf.id)
+        json_dict = {}
+        for keyframe in keyframes:
+            json_dict[keyframe.id] = keyframe.as_dict()
 
-        sorted_keyframes_list = sorted(keyframes, key=lambda kf: kf.timestep)
 
-        with open(f'{filename}.txt', 'w') as f:
-            f.write('Timestep ; Rotation [w, x, y, z] ; Translation [x, y, z]')
-            for keyframe in sorted_keyframes_list:
-                Twc = keyframe.get_pose_inverse()
-                q = Twc.rotation().toQuaternion()
-                t = Twc.translation()
-                f.write(f'\n{keyframe.timestep};{q.coeffs()};{t}')
-
+        json_str = json.dumps(json_dict, indent=4)
+        with open(f'{filename}.json', 'w') as f:
+            f.write(json_str)
 
     def save_map_points(self, filename: 'str') -> None:
 
-        with open(filename, 'ab') as f:
-            pickle.dump(self.atlas.get_all_map_points(), f)
+        map_points = self.atlas.get_all_map_points()
+        
+        json_dict = {}
+        for map_point in map_points:
+            json_dict[map_point.id] = map_point.as_dict()
+
+        json_str = json.dumps(json_dict, indent=4)
+        with open(f'{filename}.json', 'w') as f:
+            f.write(json_str)

@@ -90,8 +90,8 @@ class CameraExtrinsicCalibration:
         for (image, timestep) in self.images:
             self.SLAM.track_monocular(image, timestep)
 
-    def save_keyframe_traj(self, filename: 'str') -> None:
-        self.SLAM.save_keyframe_trajectory(filename)
+    def save_keyframes(self, filename: 'str') -> None:
+        self.SLAM.save_keyframes(filename)
 
     def save_map_points(self, filename: 'str') -> None:
         self.SLAM.save_map_points(filename)
@@ -100,7 +100,8 @@ if __name__ == '__main__':
     app = CameraExtrinsicCalibration()
     app.start()
 
-    app.save_keyframe_traj('Trajectory')
-    app.save_map_points('MapPoints')
+    OUTPUT_FOLDER = './output'
+    app.save_keyframes(f'{OUTPUT_FOLDER}/KeyFrames')
+    app.save_map_points(f'{OUTPUT_FOLDER}/MapPoints')
     
     exit()

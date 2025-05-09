@@ -114,12 +114,15 @@ class MapPoint:
                 best_id = i
         self.descriptor = copy(descriptors[best_id])
 
-    # def __eq__(self, other) -> bool:
-    #     if not isinstance(other, MapPoint): return False
-    #     return self.id == other.id
-    
-    # def __hash__(self) -> int:
-    #     return self.id
+
+    def as_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'pos': self.get_world_pos().tolist(),
+            'observations': {kf.id: index for kf, index in self.get_observations().items()},
+            'descriptor': self.descriptor.tolist(),
+            'normal_vector': self.get_normal_vector().tolist(),
+        }
     
 
 class Map:

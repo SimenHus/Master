@@ -120,3 +120,12 @@ class KeyFrame(Common):
         return np.median(np.sort(depths))
     
     def get_map_point_matches(self) -> dict[int: 'MapPoint']: return self._map_points
+
+
+    def as_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'timestep': self.timestep,
+            'keypoints': [kp.pt for kp in self.keypoints],
+            'Twc': self.get_pose_inverse().matrix().tolist()
+        }

@@ -107,7 +107,9 @@ class Tracker:
         for id, map_point in map_points_matches.items(): map_point.add_observation(self.current_frame, id) # Update observations in map point
 
         # Logic here to set frame pose
-        self.current_frame.set_pose(self.last_frame.get_pose())
+        matches = matcher.match(self.last_frame.descriptors, self.current_frame.descriptors)
+        _, estimated_odometry, _ = self.camera.reconstruct_with_two_views(self.last_frame.keypoints_und, self.current_frame.keypoints_und, matches)
+        self.current_frame.set_pose(self.last_frame.get_pose().compose(estimated_odometry))
 
         # Perform pose optimization to get better pose estimate???
 
