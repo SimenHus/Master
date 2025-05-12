@@ -1,19 +1,16 @@
 
 
-
 class A:
+    tings = 5
 
     def __init__(self):
-        self.a = 10
+        self.tings = 10
 
-    def change(self):
-        self.a = 4
+    @classmethod
+    def myfunc(clc):
+        print(clc.tings)
 
-myset = set()
-myset.add(A())
+slong = A()
 
-for item in myset:
-    print(item.a)
-    item.change()
-
-for item in myset: print(item.a)
+A.myfunc()
+slong.myfunc()

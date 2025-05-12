@@ -1,5 +1,5 @@
 
-from src.structs import Frame, KeyFrame, Camera, MapPoint
+from src.structs import Frame, KeyFrame, Camera, MapPoint, MapPointDB
 # from src.backend import LoopClosing
 # from src.mapping import LocalMapping
 from src.atlas import Atlas
@@ -45,7 +45,7 @@ class Tracker:
         self.mono_extractor = DataAssociation.Extractor()
 
         self.local_keyframes: set[KeyFrame] = set()
-        self.local_map_points: set[MapPoint] = set()
+        self.local_map_points = MapPointDB()
         self.matches_inliers = 0
     
     def track(self) -> None:
@@ -82,16 +82,22 @@ class Tracker:
             self.current_frame.reference_keyframe = self.reference_keyframe # If no reference keyframe found, set tracker keyframe as reference
 
         # Track and update current frame based on reference keyframe
+        self.logger.info(f'Tracking frame with ID/Timestep: {self.current_frame.id} / {self.current_frame.timestep}')
         ok = self.track_reference_keyframe()
 
         # Frame tracking is ok, track map
         if ok: ok = self.track_local_map()
 
-        if ok: self.state = TrackerState.OK
+        if ok:
+            self.logger.info(f'Local tracking for frame ID {self.current_frame.id} OK')
+            self.state = TrackerState.OK
+        else:
+            self.logger.info(f'Local tracking for frame ID {self.current_frame.id} NOT OK')
 
         need_KF = self.need_new_keyframe()
 
         if need_KF and ok:
+            self.logger.info(f'New keyframe required, creating keyframe ID {KeyFrame.next_id} from frame ID {self.current_frame.id}')
             self.create_new_keyframe()
 
         self.last_frame = Frame.clone(self.current_frame)
@@ -100,23 +106,50 @@ class Tracker:
     def track_reference_keyframe(self) -> bool:
         """Function to track current frame using reference keyframe"""
         # self.current_frame.compute_BoW()
+        reference_keyframe = self.reference_keyframe
+        current_frame = self.current_frame
+
         matcher = DataAssociation.Matcher()
-        map_points_matches = matcher.map_points_by_descriptors(self.reference_keyframe, self.current_frame)
+        matches = matcher.search_for_initialization(reference_keyframe, current_frame)
+        success, Tcr, P3Ds = self.camera.reconstruct_with_two_views(reference_keyframe.keypoints_und, current_frame.keypoints_und, matches)
+        if not success: return # Unsuccessfull reconstruction of new keyframe
 
-        self.current_frame.set_map_points(map_points_matches.values(), map_points_matches.keys())
-        for id, map_point in map_points_matches.items(): map_point.add_observation(self.current_frame, id) # Update observations in map point
+        current_frame.set_pose(reference_keyframe.get_pose().compose(Tcr))
 
-        # Logic here to set frame pose
-        matches = matcher.match(self.last_frame.descriptors, self.current_frame.descriptors)
-        _, estimated_odometry, _ = self.camera.reconstruct_with_two_views(self.last_frame.keypoints_und, self.current_frame.keypoints_und, matches)
-        self.current_frame.set_pose(self.last_frame.get_pose().compose(estimated_odometry))
+        all_map_points = self.atlas.get_all_map_points()
+        # Update map points in current frame
+        for i, (match, P3D) in enumerate(zip(matches, P3Ds)):
+            map_point = MapPoint(P3D, reference_keyframe, self.atlas.get_current_map())
+
+            # Add map point to current frame
+            current_frame.add_map_point(map_point, match.trainIdx)
+            map_point.add_observation(current_frame, match.trainIdx)
+            map_point.compute_distinct_descriptor() # Create initial descriptor
+
+             # If map point already exists, overwrite map point with global reference
+             # If it does not exist, we add it to the atlas active map
+            if map_point in all_map_points:
+                map_point = all_map_points[map_point] # Update python reference
+                current_frame.update_map_point(map_point) # Update map point reference in current frame to not use old reference
+            else:
+                self.atlas.add_map_point(map_point)
+
+            # If map point is not already registered in keyframe, we add it
+            if map_point not in reference_keyframe.get_map_points():
+                reference_keyframe.add_map_point(map_point, match.queryIdx)
+                map_point.add_observation(reference_keyframe, match.queryIdx)
+
+
+            # Update map point info
+            map_point.compute_distinct_descriptor()
+            map_point.update_normal_and_depth()
 
         # Perform pose optimization to get better pose estimate???
 
         # Logic here to remove outliers
 
         match_threshold = 1
-        return len(map_points_matches) >= match_threshold
+        return len(matches) >= match_threshold
 
     def monocular_initialization(self) -> None:
         
@@ -137,8 +170,8 @@ class Tracker:
             return
         
         # We are ready to initialize if we reach this point
-        matcher = DataAssociation.Matcher(0.9, True)
-        self.init_matches = matcher.search_for_initialization(self.initial_frame, self.current_frame, self.prev_matched)
+        matcher = DataAssociation.Matcher(True)
+        self.init_matches = matcher.search_for_initialization(self.initial_frame, self.current_frame)
         
         n_matches = 4
         if len(self.init_matches) < n_matches: # Not enough matches

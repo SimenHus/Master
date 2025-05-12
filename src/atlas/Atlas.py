@@ -5,7 +5,7 @@ from src.util import Logging
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from src.structs import KeyFrame, MapPoint
+    from src.structs import KeyFrame, MapPoint, MapPointDB
 
 class Atlas:
     logger = Logging.get_logger('Atlas')
@@ -45,8 +45,8 @@ class Atlas:
     def map_points_in_map(self) -> int:
         return self.get_current_map().map_points_in_map()
     
-    def get_all_map_points(self) -> set['MapPoint']: return self.get_current_map().get_all_map_points()
+    def get_all_map_points(self) -> 'MapPointDB': return self.get_current_map().get_all_map_points()
 
-    def set_reference_map_points(self, map_points: set['MapPoint']) -> None: self.get_current_map().set_reference_map_points(map_points)
+    def set_reference_map_points(self, map_points: 'MapPointDB') -> None: self.get_current_map().set_reference_map_points(map_points)
 
     def get_all_keyframes(self) -> set['KeyFrame']: return self.get_current_map().get_all_keyframes()

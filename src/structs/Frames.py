@@ -2,6 +2,7 @@ import cv2
 import numpy as np
 
 from copy import copy
+from src.structs import MapPointDB
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
 class Common:
     """Common functionality between KeyFrame and Frame"""
     _Tcw: 'Geometry.SE3'
-    _map_points: dict[int, 'MapPoint']
+    _map_points: 'MapPointDB'
 
     def set_pose(self, Tcw: 'Geometry.SE3') -> None: self._Tcw = Tcw
     def get_pose(self) -> 'Geometry.SE3': return self._Tcw
@@ -23,9 +24,10 @@ class Common:
     def get_rotation_inverse(self) -> 'Geometry.SO3': return self.get_pose_inverse().rotation()
     def get_camera_center(self) -> 'Geometry.Vector3': return self.get_pose_inverse().translation()
 
-    def clear_map_points(self) -> None: self._map_points = {}
-    def get_map_points(self) -> set['MapPoint']: return {map_point for map_point in self._map_points.values()}
-    def add_map_point(self, map_point: 'MapPoint', id: int) -> None: self._map_points[id] = map_point
+    def clear_map_points(self) -> None: self._map_points = MapPointDB()
+    def get_map_points(self) -> 'MapPointDB': return self._map_points
+    def add_map_point(self, map_point: 'MapPoint', id: int) -> None: self.get_map_points()[id] = map_point
+    def update_map_point(self, map_point: 'MapPoint') -> None: self.get_map_points().update_map_point(map_point)
     def set_map_points(self, map_points: list['MapPoint'], ids: list[int]) -> None:
         self.clear_map_points()
         for map_point, id in zip(map_points, ids): self.add_map_point(map_point, id)
@@ -45,20 +47,19 @@ class Frame(Common):
         # Initialize instance variables
         self._Tcw: 'Geometry.SE3' | None = None
         self.reference_keyframe: 'KeyFrame' | None = None
-        self._map_points: dict[int: 'MapPoint'] = {} # frame map point id: map point
-        self._outliers: set[int] = set() # Set of outliers. If KeyPoint ID in set it is an outlier
+        self._map_points = MapPointDB()
 
         self.scale_factors = self.extractor.get_scale_factors()
         self.extract_features()
         self.undistort_keypoints()
 
-    def get_outlier_ids(self) -> set[int]: return self._outliers
+    def get_outlier_ids(self) -> set[int]: return self.get_map_points().get_outlier_ids()
 
-    def add_outlier_id(self, id: int) -> None: self._outliers.add(id)
+    def add_outlier_id(self, id: int) -> None: self.get_map_points().set_outlier(id)
 
-    def get_outliers(self) -> set['MapPoint']:
-        """Collect map points and return set with map points where the map point id is not in the outlier set"""
-        return {map_point for map_point in self.get_map_points() if map_point.id in self.get_outlier_ids()}
+    def get_outliers(self) -> 'MapPointDB':
+        """Get map points marked as outliers"""
+        return self.get_map_points().get_outliers()
 
     @staticmethod
     def clone(frame: 'Frame') -> 'Frame':
@@ -89,7 +90,7 @@ class KeyFrame(Common):
         
         self.frame_id = 0 if not frame else frame.id
         self.timestep = 0 if not frame else frame.timestep
-        self._map_points = {} if not frame else frame._map_points
+        self._map_points = MapPointDB() if not frame else frame._map_points
         self.scale_factors = [] if not frame else frame.scale_factors
         self.keypoints: list[cv2.KeyPoint] = [] if not frame else frame.keypoints
         self.descriptors: list[cv2.Mat] = [] if not frame else copy(frame.descriptors) # Copy to make sure we do not alter the frame descriptors
@@ -110,7 +111,7 @@ class KeyFrame(Common):
     def compute_scene_median_depth(self) -> float:
         if len(self.keypoints) == 0: return -1.0
 
-        map_points = self._map_points.values()
+        map_points = self.get_map_points()
         Tcw = self.get_pose()
 
         # Get a list of z coordinates in camera frame for each map point
@@ -118,8 +119,6 @@ class KeyFrame(Common):
         
         # Return median of sorted list of depths (z coordinates)
         return np.median(np.sort(depths))
-    
-    def get_map_point_matches(self) -> dict[int: 'MapPoint']: return self._map_points
 
 
     def as_dict(self) -> dict:

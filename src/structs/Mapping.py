@@ -10,20 +10,74 @@ if TYPE_CHECKING:
     from src.structs import KeyFrame
 
 
+class MapPointDB:
 
-from dataclasses import dataclass, field
-@dataclass
-class MapPointObservation:
-    timestep: int
-    camera_id: int
-    keypoint: cv2.KeyPoint = None
+    def __init__(self) -> None:
+        self._map_points: dict[int, 'MapPoint'] = {} # MapPointID: MapPoint
+        self._outlier_ids: set[int] = set()
 
-    def __eq__(self, other) -> bool:
-        if not isinstance(other, MapPointObservation): return False
-        return self.timestep == other.timestep and self.camera_id == other.timestep
+    def add(self, map_point: 'MapPoint') -> None:
+        if map_point.id not in self._map_points.keys():
+            self[map_point.id] = map_point
+
+    def update_map_point(self, map_point: 'MapPoint') -> None:
+        self[map_point] = map_point
+
+    def size(self) -> int:
+        return self.__len__()
     
-    def __hash__(self) -> int:
-        return hash(tuple(self.timestep, self.camera_id))
+    def clear(self) -> None:
+        self._map_points = {}
+        self._outlier_ids = set()
+    
+    def set_outlier(self, id: int) -> None:
+        """Set supplied ID as outlier"""
+        self._outlier_ids.add(id)
+    
+    def get_outliers(self) -> 'MapPointDB':
+        sub_database = MapPointDB()
+        for outlier_id in self._outlier_ids:
+            sub_database.add(self[outlier_id])
+            sub_database.set_outlier(outlier_id)
+        return sub_database
+    
+    def get_outlier_ids(self) -> set[int]:
+        return self._outlier_ids
+    
+    def __len__(self) -> int:
+        return len(self._map_points)
+    
+    def __setitem__(self, key: 'int | MapPoint', value: 'MapPoint') -> None:
+        if isinstance(key, int):
+            self._map_points[key] = value
+            return
+        if isinstance(key, MapPoint):
+            for id, _map_point in self._map_points.items():
+                if _map_point == value:
+                    self._map_points[id] = value
+                    return
+        raise KeyError(f'MapPoint with not found in database')
+
+
+    def __getitem__(self, key: 'int | MapPoint') -> 'MapPoint':
+        if isinstance(key, int): return self._map_points[key]
+        if isinstance(key, MapPoint):
+            for _map_point in self._map_points.values():
+                if _map_point == key: return _map_point
+        raise KeyError
+    
+    def __iter__(self):
+        return iter(self._map_points.values())
+
+    def __contains__(self, identifier: 'MapPoint | int') -> bool:
+        """Check if supplied map point / id exists in database"""
+
+        
+        if isinstance(identifier, int): return identifier in self._map_points.keys()
+        if isinstance(identifier, MapPoint):
+            for _map_point in self._map_points.values(): # Loop through existing map points
+                if _map_point == identifier: return True # Check if MapPoint is similar to existing mappoints
+        return False
 
 
 class MapPoint:
@@ -78,8 +132,8 @@ class MapPoint:
 
         normal = normal / len(observations)
 
-        dist = Geometry.Vector3.norm(pos - reference_keyframe.get_camera_center())
-        level = reference_keyframe.keypoints_und[observations[reference_keyframe]].octave
+        # dist = Geometry.Vector3.norm(pos - reference_keyframe.get_camera_center())
+        # level = reference_keyframe.keypoints_und[observations[reference_keyframe]].octave
         # level_scale_factor = reference_keyframe.scale_factors[level]
 
         # self.max_distance = dist * level_scale_factor
@@ -114,6 +168,9 @@ class MapPoint:
                 best_id = i
         self.descriptor = copy(descriptors[best_id])
 
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, MapPoint): return False
+        return self.id == other.id or DataAssociation.Matcher.is_match(self.descriptor, other.descriptor)
 
     def as_dict(self) -> dict:
         return {
@@ -135,9 +192,9 @@ class Map:
         self._is_in_use = False
 
         self.keyframes: set['KeyFrame'] = set()
-        self.map_points: set['MapPoint'] = set()
+        self.map_points: MapPointDB = MapPointDB()
         self.keyframe_origins: set['KeyFrame'] = set()
-        self.reference_map_points: set['MapPoint'] = set()
+        self.reference_map_points: MapPointDB = MapPointDB()
 
         self.id = Map.next_id
         Map.next_id += 1
@@ -179,7 +236,7 @@ class Map:
     def map_points_in_map(self) -> int:
         return len(self.map_points)
     
-    def get_all_map_points(self) -> set['MapPoint']: return self.map_points
+    def get_all_map_points(self) -> MapPointDB: return self.map_points
     def get_all_keyframes(self) -> set['KeyFrame']: return self.keyframes
 
-    def set_reference_map_points(self, map_points: set['MapPoint']) -> None: self.reference_map_points = map_points
+    def set_reference_map_points(self, map_points: MapPointDB) -> None: self.reference_map_points = map_points

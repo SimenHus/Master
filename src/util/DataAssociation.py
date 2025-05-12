@@ -21,30 +21,23 @@ class Extractor:
 
 
 class Matcher:
-    THRESH_LOW: int = 50
-    THRESH_HIGH: int = 100
+    THRESH_LOW: int = 15
+    THRESH_HIGH: int = 60
     HISTO_LENGTH: int = 30
-    
-    def __init__(self, nnratio: float = 0.6, check_ori: bool = True) -> None:
-        self.nnratio = nnratio
+
+    def __init__(self, check_ori: bool = True) -> None:
         self.check_orientation = check_ori
 
-    def search_for_initialization(self, frame1: 'Frame', frame2: 'Frame', prev_matched: list['Geometry.Point2']) -> list[cv2.DMatch]:
+    def search_for_initialization(self, frame1: 'Frame', frame2: 'Frame') -> list[cv2.DMatch]:
 
         matches = self.match(frame1.descriptors, frame2.descriptors)
+        matches = self.filter_matches(matches)
         # Return matches sorted by distance (https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html)
-        sorted_matches: list[cv2.DMatch] = sorted(matches, key=lambda x: x.distance)
-
-        result = []
-        for match in sorted_matches:
-            if self.THRESH_LOW < match.distance < self.THRESH_HIGH:
-                result.append(match)
-        
-        return result
+        return matches
     
     def map_points_by_descriptors(self, reference_frame: 'KeyFrame | Frame', other_frame: 'KeyFrame | Frame') -> dict[int, 'MapPoint']:
         matches = self.match(reference_frame.descriptors, other_frame.descriptors)
-
+        
         result = {}
         map_points: dict[int: 'MapPoint'] = reference_frame.get_map_point_matches()
         for match in matches:
@@ -52,13 +45,28 @@ class Matcher:
             map_point = map_points[match.queryIdx]
             result[match.trainIdx] = map_point
         return result
+    
+    @classmethod
+    def is_match(clc, desc1: cv2.Mat, desc2: cv2.Mat) -> bool:
+        return clc.descriptor_distance(desc1, desc2) < clc.THRESH_LOW * 2
+    
+
+    @classmethod
+    def filter_matches(clc, matches: list[cv2.Mat]) -> list[cv2.Mat]:
+        # sorted_matches: list[cv2.DMatch] = sorted(matches, key=lambda x: x.distance) # Sort matches by distance
+        result = []
+        for match in matches:
+            if clc.THRESH_LOW < match.distance < clc.THRESH_HIGH:
+                result.append(match)
+        return result
 
     @classmethod
     def match(clc, desc1: list[cv2.Mat], desc2: list[cv2.Mat]) -> list[cv2.DMatch]:
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = bf.match(desc1, desc2)
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        matches = matcher.match(desc1, desc2)
+    
         return matches
-
+    
     @classmethod
     def descriptor_distance(clc, desc1: cv2.Mat, desc2: cv2.Mat) -> int:
         match = clc.match(desc1.reshape(1, desc1.shape[0]), desc2.reshape(1, desc2.shape[0]))[0]

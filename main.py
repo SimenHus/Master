@@ -58,8 +58,8 @@ def data_load_home(path, n):
     n_files = len(list_of_images) if len(list_of_images) < n else n
     for i, image_file in enumerate(list_of_images[:n_files]):
         image = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
-        
-        frame = (image, i)
+        timestep = int(image_file.split('/')[-1].strip('.png'))
+        frame = (image, timestep)
 
         result.append(frame)
 

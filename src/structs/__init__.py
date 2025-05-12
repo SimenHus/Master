@@ -1,6 +1,6 @@
 from .Camera import Camera
 
-from .Mapping import MapPoint, Map
+from .Mapping import MapPoint, Map, MapPointDB
 
 # from .Measurement import CameraMeasurement, VesselMeasurement
 
