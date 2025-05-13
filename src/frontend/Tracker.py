@@ -26,14 +26,16 @@ class Tracker:
     # loop_closing: LoopClosing
     # local_mapper: LocalMapping
 
+    first_frame_id = 0
+
     # Monocular initialization variables
-    init_last_matches: list[int]
+    required_features_for_init = 100
+    required_matches_for_init = 50
     init_matches: list[cv2.DMatch]
-    prev_matched: list[Geometry.Point2]
     init_P3D: list[Geometry.Point3]
+    init_mask: list[bool]
     initial_frame: Frame
     ready_to_init: bool = False
-    set_init: bool
 
     def __init__(self, atlas: Atlas) -> None:
         self.init_id, self.last_id = 0, 0
@@ -46,11 +48,12 @@ class Tracker:
 
         self.local_keyframes: set[KeyFrame] = set()
         self.local_map_points = MapPointDB()
-        self.matches_inliers = 0
     
     def track(self) -> None:
-        current_map = self.atlas.get_current_map() # Check if atlas contains a map, if not it is created
-        if not current_map: self.logger.error('No active map found in atlas')
+        current_map = self.atlas.get_current_map() # Check if atlas contains a map, if not it should be created
+        if not current_map:
+            self.logger.error('No active map found in atlas')
+            return
 
         # Sanity check if tracking has begun
         if self.state != TrackerState.NO_IMAGES_YET:
@@ -111,13 +114,17 @@ class Tracker:
 
         matcher = DataAssociation.Matcher()
         matches = matcher.search_for_initialization(reference_keyframe, current_frame)
-        success, Tcr, P3Ds = self.camera.reconstruct_with_two_views(reference_keyframe.keypoints_und, current_frame.keypoints_und, matches)
+        success, Tcr, P3Ds, mask = self.camera.reconstruct_with_two_views(reference_keyframe.keypoints_und, current_frame.keypoints_und, matches)
         if not success: return # Unsuccessfull reconstruction of new keyframe
 
+        matches = [match for i, match in enumerate(matches) if mask[i]] # Get inliers
+        P3Ds = [P3D for i, P3D in enumerate(P3Ds) if mask[i]] # Get inliers
+        
         current_frame.set_pose(reference_keyframe.get_pose().compose(Tcr))
-
         all_map_points = self.atlas.get_all_map_points()
+
         # Update map points in current frame
+        # As it stands, this logic should be placed elsewhere
         for i, (match, P3D) in enumerate(zip(matches, P3Ds)):
             map_point = MapPoint(P3D, reference_keyframe, self.atlas.get_current_map())
 
@@ -146,18 +153,15 @@ class Tracker:
 
         # Perform pose optimization to get better pose estimate???
 
-        # Logic here to remove outliers
-
         match_threshold = 1
         return len(matches) >= match_threshold
 
     def monocular_initialization(self) -> None:
         
         self.logger.info('Attempting to initialize monocular tracking')
-        n_features_init_threshold = 100
         # Check if we have enough keypoints to initialize
-        if len(self.current_frame.keypoints) < n_features_init_threshold:
-            self.logger.error(f'Not enough keypoints to initialize: {len(self.current_frame.keypoints)}/{n_features_init_threshold}')
+        if len(self.current_frame.keypoints) < self.required_features_for_init:
+            self.logger.error(f'Not enough keypoints to initialize: {len(self.current_frame.keypoints)}/{self.required_features_for_init}')
             return
 
         if not self.ready_to_init:
@@ -173,14 +177,13 @@ class Tracker:
         matcher = DataAssociation.Matcher(True)
         self.init_matches = matcher.search_for_initialization(self.initial_frame, self.current_frame)
         
-        n_matches = 4
-        if len(self.init_matches) < n_matches: # Not enough matches
+        if len(self.init_matches) < self.required_matches_for_init: # Not enough matches
             self.ready_to_init = False
-            self.logger.error(f'Monocular initialization failed, not enough matches: {len(self.init_matches)}/{n_matches}')
+            self.logger.error(f'Monocular initialization failed, not enough matches: {len(self.init_matches)}/{self.required_matches_for_init}')
             return
         
         # Attempt to reconstruct a scenario using two images. This will be the initial map
-        success, Tcw, self.init_P3D = self.camera.reconstruct_with_two_views(self.initial_frame.keypoints_und, self.current_frame.keypoints_und, self.init_matches)
+        success, Tcw, self.init_P3D, self.init_mask = self.camera.reconstruct_with_two_views(self.initial_frame.keypoints_und, self.current_frame.keypoints_und, self.init_matches)
         if not success: return
         
         self.logger.info('Monocular initialization successfull')
@@ -199,11 +202,10 @@ class Tracker:
 
         self.atlas.add_keyframe(initial_keyframe)
         self.atlas.add_keyframe(current_keyframe)
-
         for i, (match, P3D) in enumerate(zip(self.init_matches, self.init_P3D)):
             # Create MapPoint
-
             map_point = MapPoint(P3D, current_keyframe, self.atlas.get_current_map())
+            
             initial_keyframe.add_map_point(map_point, match.queryIdx)
             current_keyframe.add_map_point(map_point, match.trainIdx)
 
@@ -228,15 +230,15 @@ class Tracker:
         inv_median_depth = 1.0 / median_depth
         
         # Scale initial baseline
-        Tc2w = current_keyframe.get_pose()
-        scaled_translation = Tc2w.translation() * inv_median_depth
-        current_keyframe.set_pose(Geometry.SE3(Tc2w.rotation(), scaled_translation))
+        # Tc2w = current_keyframe.get_pose()
+        # scaled_translation = Tc2w.translation() * inv_median_depth
+        # current_keyframe.set_pose(Geometry.SE3(Tc2w.rotation(), scaled_translation))
 
         # Scale points
-        all_map_points = initial_keyframe.get_map_points()
-        for map_point in all_map_points:
-            map_point.set_world_pos(map_point.get_world_pos()*inv_median_depth)
-            map_point.update_normal_and_depth()
+        # all_map_points = initial_keyframe.get_map_points()
+        # for map_point in all_map_points:
+        #     map_point.set_world_pos(map_point.get_world_pos()*inv_median_depth)
+        #     map_point.update_normal_and_depth()
 
         # mpLocalMapper->InsertKeyFrame(pKFini);
         # mpLocalMapper->InsertKeyFrame(pKFcur);

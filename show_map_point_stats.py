@@ -26,12 +26,24 @@ class MapPointStats:
         ax.hist(np.array(obs))
         ax.grid()
 
+    def outliers(self, ax: plt.Axes) -> None:
+        n_outliers = 0
+        n = len(self.map_points_dict)
+        for id, map_point in self.map_points_dict.items():
+            if map_point['outlier']:
+                n_outliers += 1
+        
+        ax.set_title(f'Number of MapPoints: {n}')
+        ax.set_ylabel('Percentage of map points')
+        ax.bar(['Outlier', 'Inlier'], [100*n_outliers/n, 100*(n - n_outliers)/n])
+        ax.grid()   
+
     def n_per_frame_hist(self, ax: plt.Axes) -> None:
         obs = {}
         for id, map_point in self.map_points_dict.items():
             for frame_id in map_point['observations'].keys():
                 frame_id = str(frame_id)
-                if not frame_id in obs: obs[frame_id] = 0
+                if frame_id not in obs: obs[frame_id] = 0
                 obs[frame_id] += 1
 
         ax.set_title(f'Number of KeyFrames: {len(obs)}')
@@ -45,6 +57,7 @@ class MapPointStats:
 
         self.n_obs_hist(axs[0][0])
         self.n_per_frame_hist(axs[0][1])
+        self.outliers(axs[1][0])
 
         plt.show()
         

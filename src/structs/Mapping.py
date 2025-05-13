@@ -19,6 +19,7 @@ class MapPointDB:
     def add(self, map_point: 'MapPoint') -> None:
         if map_point.id not in self._map_points.keys():
             self[map_point.id] = map_point
+            if map_point.is_outlier(): self.set_outlier(map_point.id)
 
     def update_map_point(self, map_point: 'MapPoint') -> None:
         self[map_point] = map_point
@@ -30,9 +31,12 @@ class MapPointDB:
         self._map_points = {}
         self._outlier_ids = set()
     
-    def set_outlier(self, id: int) -> None:
-        """Set supplied ID as outlier"""
-        self._outlier_ids.add(id)
+    def set_outlier(self, id: 'int | MapPoint') -> None:
+        """Set supplied ID/MapPoint as outlier"""
+        if isinstance(id, int): self._outlier_ids.add(id)
+        if isinstance(id, MapPoint): self._outlier_ids.add(id.id)
+        
+        self[id].set_outlier()
     
     def get_outliers(self) -> 'MapPointDB':
         sub_database = MapPointDB()
@@ -95,9 +99,13 @@ class MapPoint:
         self.id = MapPoint.next_id
         MapPoint.next_id += 1
 
-
+        self._outlier = False
         self.normal_vector = self.get_world_pos() - self.get_reference_keyframe().get_camera_center()
         self.normal_vector = Geometry.Vector3.normalize(self.normal_vector)
+
+    def set_outlier(self) -> None: self._outlier = True
+    def set_inlier(self) -> None: self._outlier = False
+    def is_outlier(self) -> bool: return self._outlier
 
     def get_map(self) -> 'Map': return self.map
 
@@ -179,6 +187,7 @@ class MapPoint:
             'observations': {kf.id: index for kf, index in self.get_observations().items()},
             'descriptor': self.descriptor.tolist(),
             'normal_vector': self.get_normal_vector().tolist(),
+            'outlier': self.is_outlier()
         }
     
 
