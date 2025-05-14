@@ -82,7 +82,7 @@ class CameraExtrinsicCalibration:
         # with open(dataloader_file, 'r') as f: camera_dict = json.load(f)['Cam1']['Lens0']
 
         # self.camera = Camera.from_json(camera_id, camera_dict)
-        n = 20
+        n = 50
         self.images: list[list[cv2.Mat, int]] = data_load_home(data_folder, n)
 
     def start(self) -> None:
