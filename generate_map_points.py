@@ -65,8 +65,6 @@ def data_load_home(path, n):
 
     return result
 
-# https://arxiv.org/pdf/2007.11898
-# See https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/Examples/Monocular/mono_euroc.cc
 class CameraExtrinsicCalibration:
 
     def __init__(self) -> None:

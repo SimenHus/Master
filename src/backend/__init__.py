@@ -1,2 +1,2 @@
-from .SLAM import SLAM
-from .Backend import LoopClosing
+from .Optimizer import Optimizer
+# from .Backend import LoopClosing

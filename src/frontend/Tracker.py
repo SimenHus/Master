@@ -17,8 +17,7 @@ class TrackerState(Enum):
     NOT_INITIALIZED = 1
     OK = 2
 
-# https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/src/Tracking.cc#L1794
-# and https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/include/Tracking.h#L138
+
 class Tracker:
     logger = Logging.get_logger('Tracker')
 
@@ -197,8 +196,6 @@ class Tracker:
         initial_keyframe = KeyFrame(self.initial_frame, self.atlas.get_current_map())
         current_keyframe = KeyFrame(self.current_frame, self.atlas.get_current_map())
 
-        # initial_keyframe.compute_BoW()
-        # current_keyframe.compute_BoW()
 
         self.atlas.add_keyframe(initial_keyframe)
         self.atlas.add_keyframe(current_keyframe)
@@ -219,30 +216,8 @@ class Tracker:
 
             self.atlas.add_map_point(map_point)
 
-        # initial_keyframe.update_connections()
-        # current_keyframe.update_connections()
-
         self.logger.info(f'New map created with {self.atlas.map_points_in_map()} points')
         
-        # Optimizer::GlobalBundleAdjustemnt(mpAtlas->GetCurrentMap(),20);
-
-        median_depth = initial_keyframe.compute_scene_median_depth()
-        inv_median_depth = 1.0 / median_depth
-        
-        # Scale initial baseline
-        # Tc2w = current_keyframe.get_pose()
-        # scaled_translation = Tc2w.translation() * inv_median_depth
-        # current_keyframe.set_pose(Geometry.SE3(Tc2w.rotation(), scaled_translation))
-
-        # Scale points
-        # all_map_points = initial_keyframe.get_map_points()
-        # for map_point in all_map_points:
-        #     map_point.set_world_pos(map_point.get_world_pos()*inv_median_depth)
-        #     map_point.update_normal_and_depth()
-
-        # mpLocalMapper->InsertKeyFrame(pKFini);
-        # mpLocalMapper->InsertKeyFrame(pKFcur);
-        # mpLocalMapper->mFirstTs=pKFcur->mTimeStamp;
 
         self.current_frame.set_pose(current_keyframe.get_pose())
         self.last_keyframe_id = self.current_frame.id

@@ -9,9 +9,6 @@ if TYPE_CHECKING:
     from src.structs import Map, MapPoint, Camera
     from src.util import Geometry, DataAssociation
 
-# https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/include/Frame.h
-# https://github.com/UZ-SLAMLab/ORB_SLAM3/blob/master/src/Frame.cc
-
 
 class Common:
     """Common functionality between KeyFrame and Frame"""

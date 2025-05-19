@@ -17,6 +17,10 @@ class Camera:
         self.logger = Logging.get_logger(f'Camera {self.id}')
 
     @property
+    def parameters_with_skew(self) -> list:
+        return [self.parameters[0], self.parameters[1], 0, self.parameters[2], self.parameters[3]]
+
+    @property
     def K(self) -> np.ndarray[3, 3]:
         return np.array([
             [self.parameters[0], 0, self.parameters[2]],
