@@ -4,7 +4,6 @@ from gtsam import NonlinearFactorGraph, Values, Symbol
 
 class FactorGraphVisualization:
 
-
     @staticmethod
     def format_to_graphviz(graph: NonlinearFactorGraph, values: Values) -> Graph:
         dot = Graph(engine='sfdp')
