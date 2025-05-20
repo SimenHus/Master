@@ -1,8 +1,10 @@
 
 from gtsam import ISAM2Params, ISAM2
 from gtsam import NonlinearFactorGraph, Values, Symbol
-from gtsam import SmartProjectionPoseFactorCal3_S2, SmartProjectionParams, BetweenFactorPose3
-from gtsam import NonlinearEqualityPose3, Cal3_S2
+from gtsam import SmartProjectionPoseFactorCal3_S2, SmartProjectionParams, Cal3_S2
+from gtsam import DegeneracyMode, LinearizationMode
+from gtsam import BetweenFactorPose3
+from gtsam import NonlinearEqualityPose3
 from gtsam import noiseModel
 from gtsam.symbol_shorthand import X, T, C
 
@@ -14,16 +16,32 @@ if TYPE_CHECKING:
     from src.util import Geometry
     from src.structs import Camera
 
+
+
+
+
 class Optimizer:
     def __init__(self) -> None:
         self.new_factors = NonlinearFactorGraph()
         self.new_nodes = Values()
         self.smart_factors: dict[int: SmartProjectionPoseFactorCal3_S2] = {}
+        self.smart_params = SmartProjectionParams()
+        self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
+        self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
+
+        # Noise model: https://gtsam.org/2019/09/20/robust-noise-model.html
+        # Does not work with smartfactors???
+        # self.pixel_noise = noiseModel.Robust.Create(
+        #     noiseModel.mEstimator.Huber.Create(1.345),
+        #     noiseModel.Isotropic.Sigma(2, 1.0)
+        # )
+        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 1.0)
 
         parameters = ISAM2Params()
         parameters.setRelinearizeThreshold(0.1)
         parameters.relinearizeSkip = 1
         self.isam = ISAM2(parameters)
+
 
     def add_extrinsic_node(self, Twc_init: 'Geometry.SE3', camera_id: int) -> None:
         self.new_nodes.insert(T(camera_id), Twc_init)
@@ -50,11 +68,9 @@ class Optimizer:
         self.new_factors.add(BetweenFactorPose3(C(from_index), C(to_index), odom, noise_model))
 
     def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera') -> None:
-        smart_params = SmartProjectionParams()
-        pixel_noise = noiseModel.Isotropic.Sigma(2, 1.0)
         K = Cal3_S2(camera.parameters_with_skew)
         if map_point_id not in self.smart_factors.keys():
-            self.smart_factors[map_point_id] = SmartProjectionPoseFactorCal3_S2(pixel_noise, K, smart_params)
+            self.smart_factors[map_point_id] = SmartProjectionPoseFactorCal3_S2(self.pixel_noise, K, self.smart_params)
             self.new_factors.add(self.smart_factors[map_point_id])
         self.smart_factors[map_point_id].add(pixels, C(pose_id))
 
@@ -90,6 +106,7 @@ class Optimizer:
 
     def get_visualization_variables(self) -> tuple[NonlinearFactorGraph, Values]:
         return self.isam.getFactorsUnsafe(), self.current_estimate
+
 
     @property
     def current_estimate(self) -> Values:

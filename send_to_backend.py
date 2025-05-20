@@ -5,7 +5,7 @@ from src.structs import Camera
 from src.util import Geometry
 import json
 
-from src.visualization import GraphVisualization
+from src.visualization import Visualization
 
 class BackendRundown:
     
@@ -27,11 +27,11 @@ class BackendRundown:
         T0 = Geometry.SE3()
         # self.optimizer.add_extrinsic_node(Twc_init, 0)
         self.optimizer.add_camera_prior(T0, 0, [1e3]*6)
-        odom = Geometry.SE3.Expmap([0, 0, 0, 1, 0, 0])
+        odom = Geometry.SE3.Expmap([0, 0, 0, 0, 0, 0.1])
         prev_pose = T0.compose(odom.inverse())
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
-            # pose = Geometry.SE3(keyframe['Twc'])
-            pose = prev_pose.compose(odom)
+            pose = Geometry.SE3(keyframe['Twc'])
+            # pose = prev_pose.compose(odom)
             kf_id_int = int(keyframe['id'])
             self.optimizer.add_camera_node(pose, kf_id_int)
             for map_point in self.map_points.values():
@@ -40,7 +40,7 @@ class BackendRundown:
                 mp_id = int(map_point['id'])
                 index = map_point['observations'][kf_id]
                 kp = keyframe['keypoints'][index]
-                self.optimizer.add_projection_factor(mp_id, kp, kf_id_int, self.camera)
+                # self.optimizer.add_projection_factor(mp_id, kp, kf_id_int, self.camera)
             if i > 0:
                 self.optimizer.add_camera_odom_factor(i-1, i, Geometry.SE3.between(prev_pose, pose), [1e0]*6)
                 self.optimizer.optimize()
@@ -52,4 +52,4 @@ if __name__ == '__main__':
     app = BackendRundown()
     app.start()
     graph, estimate = app.optimizer.get_visualization_variables()
-    GraphVisualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
+    Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)

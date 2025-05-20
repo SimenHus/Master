@@ -1,6 +1,5 @@
 
 from gtsam import CustomFactor
-from gtsam import noiseModel
 from gtsam import Pose3
 
 import numpy as np
