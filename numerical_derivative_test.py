@@ -10,32 +10,11 @@ from gtsam.utils.numerical_derivative import numericalDerivative31, numericalDer
 
 from src.backend.factors import BetweenFactorCamera
 
-
-# def error_func(this: CustomFactor, v: Values, H: list[np.ndarray]=None):
-#     """
-#     Error function that mimics a BetweenFactor
-#     :param this: reference to the current CustomFactor being evaluated
-#     :param v: Values object
-#     :param H: list of references to the Jacobian arrays
-#     :return: the non-linear error
-#     """
-#     key0 = this.keys()[0]
-#     key1 = this.keys()[1]
-#     gT1, gT2 = v.atPose2(key0), v.atPose2(key1)
-#     error = measurement.localCoordinates(gT1.between(gT2))
-
-#     if H is not None:
-#         result = gT1.between(gT2)
-#         H[0] = -result.inverse().AdjointMap()
-#         H[1] = np.eye(3)
-#     return error
-
-
 noise_model = noiseModel.Isotropic.Sigma(6, 0.1)
 custom_factor = BetweenFactorCamera(0, 1, 2, noise_model)
 
 T_ref = Pose3()
-T_rel = Pose3.Expmap([0.0, 0.0, 1.0, 0.5, 0.2, -0.5])
+T_rel = Pose3.Expmap([2.0, 0.0, -1.0, 10, -5, 1])
 T_cam = T_ref.compose(T_rel)
 
 values = Values()

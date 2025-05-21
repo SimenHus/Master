@@ -16,6 +16,7 @@ from PySide6.QtCore import Qt, QTimer
 
 
 from src.util import Geometry
+from src.util import Time
 
 
 class LoadingDialog(QDialog):
@@ -306,15 +307,20 @@ class ImageSequencePlayer(QWidget):
     def filtered_image_paths(self):
         if self.show_only_keyframes:
             # Filter images to only those whose timestamp matches a keyframe
-            keyframe_timestamps = {str(k['timestep']) for k in self.keyframes.values()}
-            return [path for path in self.image_paths if os.path.splitext(os.path.basename(path))[0] in keyframe_timestamps]
+            keyframe_timestamps = {int(k['timestep']) for k in self.keyframes.values()}
+            active_paths = []
+            for path in self.image_paths:
+                base_name = os.path.splitext(os.path.basename(path))[0]
+                posix_timestamp = Time.TimeConversion.generic_to_POSIX(base_name)
+                if posix_timestamp in keyframe_timestamps: active_paths.append(path)
+            return active_paths
         else:
             return self.image_paths
 
     def update_statistics(self, index):
         # Get corresponding keyframe data from the JSON
         image_name = os.path.splitext(os.path.basename(self.filtered_image_paths()[index]))[0]
-        timestamp = int(image_name)
+        timestamp = Time.TimeConversion.generic_to_POSIX(image_name)
         keyframe = None
         for kf in self.keyframes.values():
             if int(kf['timestep']) == timestamp:

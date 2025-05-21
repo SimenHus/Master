@@ -40,13 +40,15 @@ class Tracker:
         self.init_id, self.last_id = 0, 0
         self.state = TrackerState.NO_IMAGES_YET
         self.atlas = atlas
-        self.camera = Camera([458.654, 457.296, 367.215, 248.375], [-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]) # More logic around camera should be added
 
         self.init_extractor = DataAssociation.Extractor()
         self.mono_extractor = DataAssociation.Extractor()
 
         self.local_keyframes: set[KeyFrame] = set()
         self.local_map_points = MapPointDB()
+
+    def set_camera(self, camera: Camera) -> None:
+        self.camera = camera
     
     def track(self) -> None:
         current_map = self.atlas.get_current_map() # Check if atlas contains a map, if not it should be created
@@ -275,7 +277,7 @@ class Tracker:
 
 
     def need_new_keyframe(self) -> bool:
-        if Frame.next_id < 5: return True
+        # if Frame.next_id < 5: return True
         if Frame.next_id % 5 == 0: return True
         return False
 

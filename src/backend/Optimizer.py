@@ -1,7 +1,8 @@
 
 from gtsam import ISAM2Params, ISAM2
 from gtsam import NonlinearFactorGraph, Values, Symbol
-from gtsam import SmartProjectionPoseFactorCal3_S2, SmartProjectionParams, Cal3_S2
+from gtsam import SmartProjectionPoseFactorCal3_S2, SmartProjectionParams, SmartProjectionPoseFactorCal3DS2
+from gtsam import Cal3_S2, Cal3DS2
 from gtsam import DegeneracyMode, LinearizationMode
 from gtsam import BetweenFactorPose3
 from gtsam import NonlinearEqualityPose3
@@ -18,8 +19,6 @@ if TYPE_CHECKING:
 
 
 
-
-
 class Optimizer:
     def __init__(self) -> None:
         self.new_factors = NonlinearFactorGraph()
@@ -28,6 +27,7 @@ class Optimizer:
         self.smart_params = SmartProjectionParams()
         self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
         self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
+        self.completed_factors = []
 
         # Noise model: https://gtsam.org/2019/09/20/robust-noise-model.html
         # Does not work with smartfactors???
@@ -38,8 +38,8 @@ class Optimizer:
         self.pixel_noise = noiseModel.Isotropic.Sigma(2, 1.0)
 
         parameters = ISAM2Params()
-        parameters.setRelinearizeThreshold(0.1)
-        parameters.relinearizeSkip = 1
+        # parameters.setRelinearizeThreshold(0.1)
+        # parameters.relinearizeSkip = 1
         self.isam = ISAM2(parameters)
 
 
@@ -57,7 +57,11 @@ class Optimizer:
 
     def add_camera_between_factor(self, ref_index: int, camera_id: int, camera_pose_id: int, sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        self.new_factors.add(BetweenFactorCamera(X(ref_index), T(camera_id), C(camera_pose_id), noise_model))
+        extrinsic_noise = noiseModel.Robust.Create(
+            noiseModel.mEstimator.Huber.Create(1.345),
+            noise_model
+        )
+        self.new_factors.add(BetweenFactorCamera(X(ref_index), T(camera_id), C(camera_pose_id), extrinsic_noise))
 
     def add_ref_odom_factor(self, from_index: int, to_index: int, odom: 'Geometry.SE3', sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
@@ -67,12 +71,18 @@ class Optimizer:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
         self.new_factors.add(BetweenFactorPose3(C(from_index), C(to_index), odom, noise_model))
 
-    def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera') -> None:
-        K = Cal3_S2(camera.parameters_with_skew)
+    def update_projection_factor(self, map_point_id: int, normed_pixels: tuple, pose_id: int, camera: 'Camera') -> None:
         if map_point_id not in self.smart_factors.keys():
+            K = Cal3_S2(camera.parameters_with_skew)
             self.smart_factors[map_point_id] = SmartProjectionPoseFactorCal3_S2(self.pixel_noise, K, self.smart_params)
-            self.new_factors.add(self.smart_factors[map_point_id])
+
+        pixels = camera.normed_to_pixels(normed_pixels)
         self.smart_factors[map_point_id].add(pixels, C(pose_id))
+
+    def mark_complete_projection_factor(self, map_point_id: int) -> None:
+        if map_point_id in self.completed_factors: return # Return if already completed
+        self.completed_factors.append(map_point_id) # Mark as complete
+        self.new_factors.add(self.smart_factors[map_point_id]) # Add factor to graph and make it immutable to further changes
 
     def add_camera_prior(self, value: 'Geometry.SE3', node_id: int, sigma: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigma)
@@ -83,7 +93,6 @@ class Optimizer:
         in_new_nodes = self.new_nodes.exists(node_id)
         return in_isam or in_new_nodes
 
-
     def optimize(self, extra_updates: int = 0) -> None:
         # Perform incremental update to iSAM
         self.isam.update(self.new_factors, self.new_nodes)
@@ -93,7 +102,7 @@ class Optimizer:
 
     def get_extrinsic_node_estimate(self, node_id: int) -> 'Geometry.SE3':
         node_symb = T(node_id)
-        # if not self.isam.valueExists(node_symb): return
+        if not self.isam.valueExists(node_symb): return self.new_nodes.atPose3(node_symb)
         return self.current_estimate.atPose3(node_symb)
     
     def get_ref_node_estimate(self, node_id: int) -> 'Geometry.SE3':

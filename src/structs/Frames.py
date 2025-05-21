@@ -123,5 +123,6 @@ class KeyFrame(Common):
             'id': self.id,
             'timestep': self.timestep,
             'keypoints': [kp.pt for kp in self.keypoints],
+            'keypoints_und': [kp.pt for kp in self.keypoints_und],
             'Twc': self.get_pose_inverse().matrix().tolist()
         }

@@ -47,3 +47,13 @@ class Camera:
         T21 = Geometry.SE3(R, t)
 
         return True, T21, triangulated_points, mask
+    
+    @staticmethod
+    def K_list_to_params(K: list) -> list:
+        return [K[0], K[4], K[2], K[5]]
+    
+    def normed_to_pixels(self, normed_pixels: tuple) -> tuple:
+        fx, fy, cx, cy = self.parameters
+        u = fx * normed_pixels[0] + cx
+        v = fy * normed_pixels[1] + cy
+        return (u, v)
