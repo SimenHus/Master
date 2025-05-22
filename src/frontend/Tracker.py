@@ -278,7 +278,7 @@ class Tracker:
 
     def need_new_keyframe(self) -> bool:
         # if Frame.next_id < 5: return True
-        if Frame.next_id % 5 == 0: return True
+        if Frame.next_id % 2 == 0: return True
         return False
 
     def update_local_map(self) -> None:

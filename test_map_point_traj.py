@@ -2,13 +2,15 @@
 
 from src.backend import Optimizer
 from src.structs import Camera
-from src.util import Geometry, DataLoader
+from src.util import Geometry, DataLoader, Time
 import json
 import numpy as np
 
 from src.visualization import Visualization
 
-class BackendRundown:
+import matplotlib.pyplot as plt
+
+class Application:
     
     def __init__(self) -> None:
         self.optimizer = Optimizer()
@@ -33,36 +35,22 @@ class BackendRundown:
 
     def start(self):
         for kf_id, keyframe in self.keyframes.items():
-            t0 = keyframe['timestep']
             id0 = int(kf_id)
             break
-        T0 = self.poses[t0]
-        att_noisy = np.array([3, -2, 1]) * np.pi / 180
-        pos_noisy = np.array([1.5, -0.8, -1.0])
-        noise = Geometry.SE3.from_STX(np.append(att_noisy, pos_noisy))
-        Twc_noisy = self.Twc_gt.compose(noise)
-        noisy_logmap = Geometry.SE3.to_STX(Twc_noisy)
-        print(f'Twc_noisy: {noisy_logmap}')
+
+        # T0 = self.poses[t0]
+        # Twc0 = T0.compose(self.Twc_gt)
+        Twc0 = Geometry.SE3()
         prior_sigmas = [0.5, 0.5, 0.5, 1, 1, 1]
-        camera_between_sigmas = [0.02, 0.02, 0.02, 0.05, 0.05, 0.05]
-        camera_between_sigmas = np.array([0.02, 0.02, 0.02, 0.05, 0.05, 0.05]) * 10
-
-
-        Twc0 = T0.compose(Twc_noisy)
-        self.optimizer.add_extrinsic_node(Twc_noisy, self.camera.id) # Add initial guess for extrinsics
         self.optimizer.add_camera_prior(Twc0, id0, prior_sigmas) # Add prior for first camera pose based on initial guess of extrinsics
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
-            T_rel_est = self.optimizer.get_extrinsic_node_estimate(self.camera.id)
-            ref_pose = self.poses[keyframe['timestep']] # Get pose from file
-            cam_pose = ref_pose.compose(self.Twc_gt)
-            # cam_pose = ref_pose.compose(T_rel_est) # Get estimated camera pose
+            # ref_pose = self.poses[keyframe['timestep']] # Get pose from file
+            # cam_pose = ref_pose.compose(self.Twc_gt)
             Tc0c = Geometry.SE3(keyframe['Twc'])
-            # cam_pose = Twc0.compose(Tc0c)
+            cam_pose = Twc0.compose(Tc0c)
             kf_id_int = int(keyframe['id'])
-            self.optimizer.add_ref_node(ref_pose, kf_id_int) # Add node for reference pose
-            self.optimizer.add_ref_equality(ref_pose, kf_id_int) # Add factor to constrain reference pose
             self.optimizer.add_camera_node(cam_pose, kf_id_int) # Add node for camera pose
-            self.optimizer.add_camera_between_factor(kf_id_int, self.camera.id, kf_id_int, camera_between_sigmas) # Add factor to constrain camera to reference frame
+
             for map_point in self.map_points.values():
                 observations = map_point['observations']
                 if len(observations) < 6: continue # Skip map points with few observations
@@ -77,20 +65,46 @@ class BackendRundown:
             # print(i)
             if i == 3: break
 
+    def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
+        ref_traj = np.empty([len(self.keyframes), 6])
+        cam_traj = np.empty([len(self.keyframes), 6])
+        for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
+            ref_pose = self.poses[keyframe['timestep']]
+            cam_pose = ref_pose.compose(self.Twc_gt)
+            ref_traj[i, :] = Geometry.SE3.to_STX(ref_pose)
+            cam_traj[i, :] = Geometry.SE3.to_STX(cam_pose)
+        ang_labels = ['roll', 'pitch', 'yaw']
+        pos_labels = ['x', 'y', 'z']
+        for i, (ang_label, pos_label) in enumerate(zip(ang_labels, pos_labels)):
+            ang_axs[i].set_title(ang_label)
+            ang_axs[i].plot(t, ref_traj[:, i], label='Ref-gt')
+            ang_axs[i].plot(t, cam_traj[:, i], label='Cam-gt')
 
+            pos_axs[i].set_title(pos_label)
+            pos_axs[i].plot(t, ref_traj[:, i+3], label='Ref-gt')
+            pos_axs[i].plot(t, cam_traj[:, i+3], label='Cam-gt')
+
+        for ax1, ax2 in zip(pos_axs, ang_axs):
+            ax1.grid()
+            ax2.grid()
+            ax1.legend()
+            ax2.legend()
+
+
+
+    def show(self) -> None:
+        fig, axs = plt.subplots(2, 3)
+
+        t = np.arange(len(self.keyframes))
+        self.plot_gt(t, axs[0], axs[1])
+
+
+        plt.show()
+            
 if __name__ == '__main__':
 
-    app = BackendRundown()
-    app.start()
-    graph, estimate = app.optimizer.get_visualization_variables()
-    Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
-    
-    gt = Geometry.SE3.to_STX(app.Twc_gt)
-    estim = Geometry.SE3.to_STX(app.optimizer.get_extrinsic_node_estimate(app.camera.id))
-    print('Ground truth:')
-    print(f'Position: {gt[3:]}')
-    print(f'Rotation: {gt[:3]}')
-
-    print('\nEstimate:')
-    print(f'Position: {estim[3:]}')
-    print(f'Rotation: {estim[:3]}')
+    app = Application()
+    # app.start()
+    app.show()
+    # graph, estimate = app.optimizer.get_visualization_variables()
+    # Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)

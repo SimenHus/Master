@@ -41,10 +41,9 @@ def load_stx_poses(path, n = None) -> list[PoseData]:
         unix_timestep = Time.TimeConversion.generic_to_POSIX(timestep)
         
         pos = np.array(data['position'])
-        att = np.array(data['attitude']) * np.pi / 180
-        rot = Geometry.SO3.Expmap(att)
-        # pose = Geometry.SE3(att, pos)
-        pose = Geometry.SE3.Expmap(np.append(att, pos))
+        att = np.array(data['attitude'])
+        vals = np.append(att, pos)
+        pose = Geometry.SE3.from_STX(vals)
         result.append(PoseData(pose, unix_timestep))
 
     return sorted(result, key=lambda x: x.timestep)
@@ -56,10 +55,9 @@ def load_stx_camera(path, cam=1, lens=0) -> list[Camera, Geometry.SE3]:
     lens_info = data[f'Cam{cam}'][f'Lens{lens}']
     K_list = lens_info['camera_matrix']
     pos = np.array(lens_info['location'])
-    att = np.array(lens_info['rotation']) * np.pi / 180
-    rot = Geometry.SO3.Expmap(att)
+    att = np.array(lens_info['rotation'])
     dist_coeffs = lens_info['distortion_coefficients']
     params = Camera.K_list_to_params(K_list)
-    # pose = Geometry.SE3(rot, pos)
-    pose = Geometry.SE3.Expmap(np.append(att, pos))
+    vals = np.append(att, pos)
+    pose = Geometry.SE3.from_STX(vals)
     return Camera(params, dist_coeffs), pose

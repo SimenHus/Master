@@ -18,13 +18,23 @@ class BetweenFactorCamera(CustomFactor):
         H_rel = np.zeros((6, 6), dtype=np.float64, order='F')
         H_cam = np.zeros((6, 6), dtype=np.float64, order='F')
 
-        prediction = Pose3.between(T_ref, T_cam, H_ref, H_cam)
-        error = Pose3.localCoordinates(T_rel, prediction, H_rel)
+        # Between solution
+        # prediction = Pose3.between(T_ref, T_cam, H_ref, H_cam)
+        # error = Pose3.localCoordinates(T_rel, prediction, H_rel)
 
         # TESTED NUMERICALLY
+        # if H is not None:
+        #     H[0] = -H_rel @ H_ref
+        #     H[1] = H_rel
+        #     H[2] = -H_rel @ H_cam
+
+        # Compose solution
+        prediction = T_ref.compose(T_rel, H_ref, H_rel)
+        error = Pose3.localCoordinates(T_cam, prediction, H_cam)
+
         if H is not None:
-            H[0] = -H_rel @ H_ref
-            H[1] = H_rel
-            H[2] = -H_rel @ H_cam
+            H[0] = -H_cam@H_ref
+            H[1] = -H_cam@H_rel
+            H[2] = H_cam
 
         return error

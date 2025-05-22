@@ -9,18 +9,19 @@ class TimeFormat(Enum):
     STX = 2
 
 class TimeConversion:
+    UTC_POSIX_FACTOR = 1e6
 
     @staticmethod
     def UTC_to_POSIX(timestamp: str) -> int:
-        return int(datetime.fromisoformat(timestamp).timestamp() * 1e6)
+        return int(datetime.fromisoformat(timestamp).timestamp() * TimeConversion.UTC_POSIX_FACTOR)
     
     @staticmethod
     def POSIX_to_UTC(timestamp: int) -> str:
-        return str(datetime.fromtimestamp(timestamp, timezone.utc))
+        return str(datetime.fromtimestamp(timestamp / TimeConversion.UTC_POSIX_FACTOR))
     
     @staticmethod
     def POSIX_to_STX(timestamp: int) -> str:
-        utc = TimeConversion.POSIX_to_UTC(timestamp)
+        utc = datetime.fromisoformat(TimeConversion.POSIX_to_UTC(timestamp))
         return datetime.strftime(utc, '%Y-%m-%d-%H_%M_%S_%f')
     
     @staticmethod

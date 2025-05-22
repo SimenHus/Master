@@ -24,6 +24,7 @@ class FactorGraphVisualization:
 
         for i in range(graph.size()):
             factor = graph.at(i)
+            if not factor: continue
             factor_name = f'Factor {i}'
             dot.node(factor_name, type(factor).__name__, shape='box', style='filled')
             for key in factor.keys():

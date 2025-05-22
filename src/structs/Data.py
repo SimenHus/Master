@@ -9,7 +9,7 @@ from src.util import Geometry
 class ImageData:
     image: cv2.Mat
     timestep: str
-    flename: str
+    filename: str
 
 
 @dataclass
