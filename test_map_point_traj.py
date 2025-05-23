@@ -76,8 +76,10 @@ class Application:
                 self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
             if i > 0:
                 self.optimizer.optimize() # Optimize after at least two timesteps have passed
+                if i % 2 == 0:
+                    self.optimizer.add_camera_prior(cam_pose, kf_id_int, prior_sigmas)
             print(i)
-            # if i == 9: break
+            if i == 24: break
 
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
