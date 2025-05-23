@@ -1,8 +1,8 @@
 
 from gtsam import ISAM2Params, ISAM2, LevenbergMarquardtOptimizer
 from gtsam import NonlinearFactorGraph, Values, Symbol
-from gtsam import SmartProjectionPoseFactorCal3_S2, SmartProjectionParams, SmartProjectionPoseFactorCal3DS2
-from gtsam import Cal3_S2, Cal3DS2
+from gtsam import SmartProjectionPoseFactorCal3_S2, SmartProjectionParams
+from gtsam import Cal3_S2
 from gtsam import DegeneracyMode, LinearizationMode
 from gtsam import BetweenFactorPose3, PriorFactorPose3
 from gtsam import NonlinearEqualityPose3
@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from src.util import Geometry
     from src.structs import Camera
-
 
 class FactorIndexDB:
     next_factor_index = 0
@@ -68,8 +67,8 @@ class Optimizer:
 
         self.factor_db = FactorIndexDB()
         self.smart_params = SmartProjectionParams()
-        self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
-        self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
+        # self.smart_params.setDegeneracyMode(DegeneracyMode.HANDLE_INFINITY)
+        # self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
         self.factors_to_update = []
 
         # Noise model: https://gtsam.org/2019/09/20/robust-noise-model.html
@@ -78,17 +77,17 @@ class Optimizer:
         #     noiseModel.mEstimator.Huber.Create(1.345),
         #     noiseModel.Isotropic.Sigma(2, 1.0)
         # )
-        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 2.0)
+        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 1.0) # 1 pixel std deviation in u and v
 
         self.isam_parameters = ISAM2Params()
-        self.isam_parameters.setRelinearizeThreshold(0.0)
-        self.isam_parameters.relinearizeSkip = 1
+        # self.isam_parameters.setRelinearizeThreshold(0.0)
+        # self.isam_parameters.relinearizeSkip = 6
         self.isam = ISAM2(self.isam_parameters)
 
     def add_factor(self, factor, id: 'int | None' = None) -> None:
-        self.new_factors.add(factor)
-        if id is None: self.factor_db.increment()
-        else: self.factor_db.add(id)
+        self.new_factors.add(factor) # Add factor to set of factors which should be added to FG
+        if id is None: self.factor_db.increment() # Increment number of factors in DB
+        else: self.factor_db.add(id) # Remember factor information and increment number of factors in DB
 
     def add_extrinsic_node(self, Twc_init: 'Geometry.SE3', camera_id: int) -> None:
         self.new_nodes.insert(T(camera_id), Twc_init)
@@ -119,14 +118,14 @@ class Optimizer:
         self.add_factor(BetweenFactorPose3(C(from_index), C(to_index), odom, noise_model))
 
     def update_projection_factor(self, map_point_id: int, normed_pixels: tuple, pose_id: int, camera: 'Camera') -> None:
-        pixels = camera.normed_to_pixels(normed_pixels)
-        self.factor_db.add_map_point_observation(map_point_id, pixels, C(pose_id))
-        observations = self.factor_db.observations(map_point_id)
-        if len(observations) < 2: return # Need 2 or more observations before adding to FG
+        pixels = camera.normed_to_pixels(normed_pixels) # Get undistorted camera pixel coordinates
+        self.factor_db.add_map_point_observation(map_point_id, pixels, C(pose_id)) # Include pixel observation in factor DB
 
+        observations = self.factor_db.observations(map_point_id) # Get observations from factor DB
+        if len(observations) < 2: return # Need 2 or more observations before adding to FG
         K = Cal3_S2(camera.parameters_with_skew)
         factor = SmartProjectionPoseFactorCal3_S2(self.pixel_noise, K, self.smart_params)
-        for (kp, pose_id) in observations: factor.add(kp, pose_id)
+        for (kp, pose_id) in observations: factor.add(kp, pose_id) # Add all observations to the factor
         
         # If factor already exists in factor graph, update it and remove old
         if map_point_id in self.factor_db:
@@ -145,39 +144,48 @@ class Optimizer:
         return in_isam or in_new_nodes
 
     def optimize(self, extra_updates: int = 0) -> None:
-        # Perform incremental update to iSAM
-        for i in range(self.new_factors.size()): self.master_graph.add(self.new_factors.at(i))
-        self.isam.update(self.new_factors, self.new_nodes, self.factors_to_update)
-        for index in self.factors_to_update: self.master_graph.remove(index)
-        self.factors_to_update.clear()
-        self.new_nodes.clear()
-        self.new_factors.resize(0)
-        for _ in range(extra_updates): self.isam.update()
+        for i in range(self.new_factors.size()): self.master_graph.add(self.new_factors.at(i)) # Add new nodes to master graph
+        for index in self.factors_to_update: self.master_graph.remove(index) # Remove old factors from master graph
 
-    def batch_optimize(self) -> None:
-        batch = LevenbergMarquardtOptimizer(self.master_graph, self.current_estimate).optimize()
-        self.isam = ISAM2(self.isam_parameters)
-        self.isam.update(self.master_graph, batch)
+        # Perform incremental update to iSAM, and remove/readd nodes to be updated
+        self.isam.update(self.new_factors, self.new_nodes, self.factors_to_update)
+        for _ in range(extra_updates): self.isam.update() # Perform extra updates
+
+        self.new_nodes.clear() # Clear list of new nodes, since they are now added
+        self.new_factors.resize(0) # Clear list of new factors, since they are now added
+        self.factors_to_update.clear() # Clear list of updated factors
+
 
     def get_extrinsic_node_estimate(self, node_id: int) -> 'Geometry.SE3':
-        node_symb = T(node_id)
-        if not self.isam.valueExists(node_symb): return self.new_nodes.atPose3(node_symb)
-        return self.current_estimate.atPose3(node_symb)
+        return self._get_SE3_node(T(node_id))
     
     def get_ref_node_estimate(self, node_id: int) -> 'Geometry.SE3':
-        node_symb = X(node_id)
-        return self.current_estimate.atPose3(node_symb)
+        return self._get_SE3_node(X(node_id))
     
     def get_camera_node_estimate(self, node_id: int) -> 'Geometry.SE3':
-        node_symb = C(node_id)
-        return self.current_estimate.atPose3(node_symb)
+        return self._get_SE3_node(C(node_id))
 
     def get_visualization_variables(self) -> tuple[NonlinearFactorGraph, Values]:
-        return self.isam.getFactorsUnsafe(), self.current_estimate
-        # return self.new_factors, self.current_estimate
+        return self.master_graph, self.current_estimate
 
+    def _get_SE3_node(self, node_symb: Symbol) -> 'Geometry.SE3':
+        if self.current_estimate.exists(node_symb): return self.current_estimate.atPose3(node_symb)
+        if self.new_nodes.exists(node_symb): return self.new_nodes.atPose3(node_symb)
+        return None
+    
+    def _get_SE3_node_BA(self, node_symb: Symbol) -> 'Geometry.SE3':
+        if self.global_bundle_adjustment_estimate.exists(node_symb):
+            return self.global_bundle_adjustment_estimate.atPose3(node_symb)
+        return None
+
+
+    def get_camera_node_bundle_solution(self, node_id: int) -> 'Geometry.SE3':
+        return self._get_SE3_node_BA(C(node_id))
 
     @property
     def current_estimate(self) -> Values:
         return self.isam.calculateBestEstimate()
-        # return LevenbergMarquardtOptimizer(self.new_factors, self.new_nodes).optimize()
+
+    @property    
+    def global_bundle_adjustment_estimate(self) -> Values:
+        return LevenbergMarquardtOptimizer(self.master_graph, self.current_estimate).optimize()

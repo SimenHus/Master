@@ -1,5 +1,5 @@
 
-from src.structs import ImageData, PoseData, Camera
+from src.structs import ImageData, STXData, Camera, LLA
 from src.util import Time, Geometry
 import cv2
 import glob
@@ -27,24 +27,25 @@ def load_stx_images(path, n = None) -> list[ImageData]:
     return sorted(result, key=lambda x: x.timestep)
 
 
-def load_stx_poses(path, n = None) -> list[PoseData]:
+def load_stx_data(path, n = None) -> list[STXData]:
     jsons = path + f'/*.json'
     list_of_jsons = glob.glob(jsons)
 
     result = []
     if n is None: n = len(list_of_jsons)
     n_files = len(list_of_jsons) if len(list_of_jsons) < n else n
+
     for i, json_file in enumerate(list_of_jsons[:n_files]):
         with open(json_file, 'r') as f: data_all = json.load(f)
         timestep = data_all['meas_time']
         data = data_all['own_vessel']
         unix_timestep = Time.TimeConversion.generic_to_POSIX(timestep)
         
-        pos = np.array(data['position'])
+        lat, lon, alt = data['position']
+        lla = LLA(lat, lon, alt)
         att = np.array(data['attitude'])
-        vals = np.append(att, pos)
-        pose = Geometry.SE3.from_STX(vals)
-        result.append(PoseData(pose, unix_timestep))
+
+        result.append(STXData(lla, att, unix_timestep))
 
     return sorted(result, key=lambda x: x.timestep)
 

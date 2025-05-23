@@ -21,23 +21,26 @@ class Vector3:
         """Returns norm of vector"""
         return np.linalg.norm(vector)
     
-def SSA(a: float) -> float:
-    return (a + 180) % 360 - 180
 
 class Vector6:
     pass
+
+
 class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
     
     @staticmethod
     def from_STX(vals: Vector6) -> 'SE3':
-        for i in range(3): vals[i] = SSA(vals[i]) * np.pi / 180
-        return SE3.Expmap(vals)
+        vals[:3] *= np.pi / 180
+        pos = vals[3:]
+        rot = SO3.RzRyRx(*vals[:3])
+
+        return SE3(rot, pos)
 
     @staticmethod
     def to_STX(pose: 'SE3') -> Vector6:
-        vals = SE3.Logmap(pose)
-        for i in range(3): vals[i] = vals[i] * 180 / np.pi
-        return vals
+        rot = pose.rotation().rpy() * 180 / np.pi
+        pos = pose.translation()
+        return np.append(rot, pos)
 
 class SO3(gtsam.Rot3): # Abstraction of gtsam Rot3 class
     pass

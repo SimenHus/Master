@@ -11,8 +11,15 @@ class ImageData:
     timestep: str
     filename: str
 
+@dataclass
+class LLA:
+    lat: float
+    lon: float
+    alt: float
+
 
 @dataclass
-class PoseData:
-    pose: Geometry.SE3
+class STXData:
+    lla: LLA
+    att: Geometry.Vector3
     timestep: str
