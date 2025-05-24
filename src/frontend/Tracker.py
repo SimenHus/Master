@@ -115,7 +115,7 @@ class Tracker:
 
         matcher = DataAssociation.Matcher()
         matches = matcher.search_for_initialization(reference_keyframe, current_frame)
-        success, Tcr, P3Ds, mask = self.camera.reconstruct_with_two_views(reference_keyframe.keypoints_und, current_frame.keypoints_und, matches)
+        success, Tcr, P3Ds, mask = self.camera.reconstruct_with_two_views(reference_keyframe.keypoints_normed, current_frame.keypoints_normed, matches)
         if not success: return # Unsuccessfull reconstruction of new keyframe
 
         matches = [match for i, match in enumerate(matches) if mask[i]] # Get inliers
@@ -128,28 +128,23 @@ class Tracker:
         # As it stands, this logic should be placed elsewhere
         for i, (match, P3D) in enumerate(zip(matches, P3Ds)):
             map_point = MapPoint(P3D, reference_keyframe, self.atlas.get_current_map())
+            map_point.set_init_descriptor(reference_keyframe.descriptors[match.queryIdx])
 
-            # Add map point to current frame
-            current_frame.add_map_point(map_point, match.trainIdx)
-            map_point.add_observation(current_frame, match.trainIdx)
-            map_point.compute_distinct_descriptor() # Create initial descriptor
+            # If map point already exists, overwrite map point with global reference
+            # If it does not exist, we add it to the atlas active map
+            if map_point in all_map_points: map_point = all_map_points[map_point] # Get reference
+            elif map_point in reference_keyframe.get_map_points(): map_point = reference_keyframe.get_map_points() # Get reference
+            else: self.atlas.add_map_point(map_point) # Does not already exist, update atlas
 
-             # If map point already exists, overwrite map point with global reference
-             # If it does not exist, we add it to the atlas active map
-            if map_point in all_map_points:
-                map_point = all_map_points[map_point] # Update python reference
-                current_frame.update_map_point(map_point) # Update map point reference in current frame to not use old reference
-            else:
-                self.atlas.add_map_point(map_point)
-
-            # If map point is not already registered in keyframe, we add it
             if map_point not in reference_keyframe.get_map_points():
                 reference_keyframe.add_map_point(map_point, match.queryIdx)
                 map_point.add_observation(reference_keyframe, match.queryIdx)
 
+            # Add map point to current frame
+            current_frame.add_map_point(map_point, match.trainIdx)
+            map_point.add_observation(current_frame, match.trainIdx)
 
-            # Update map point info
-            map_point.compute_distinct_descriptor()
+            map_point.compute_distinct_descriptor() # Create/Update distinct descriptor
             map_point.update_normal_and_depth()
 
         # Perform pose optimization to get better pose estimate???
@@ -168,14 +163,14 @@ class Tracker:
         if not self.ready_to_init:
             self.initial_frame = Frame.clone(self.current_frame)
             self.last_frame = Frame.clone(self.current_frame)
-            self.prev_matched = [key_und.pt for key_und in self.current_frame.keypoints_und]
+            self.prev_matched = [key_norm.pt for key_norm in self.current_frame.keypoints_normed]
 
             self.ready_to_init = True
             self.logger.info('Monocular initialization ready')
             return
         
         # We are ready to initialize if we reach this point
-        matcher = DataAssociation.Matcher(True)
+        matcher = DataAssociation.Matcher()
         self.init_matches = matcher.search_for_initialization(self.initial_frame, self.current_frame)
         
         if len(self.init_matches) < self.required_matches_for_init: # Not enough matches
@@ -184,7 +179,7 @@ class Tracker:
             return
         
         # Attempt to reconstruct a scenario using two images. This will be the initial map
-        success, Tcw, self.init_P3D, self.init_mask = self.camera.reconstruct_with_two_views(self.initial_frame.keypoints_und, self.current_frame.keypoints_und, self.init_matches)
+        success, Tcw, self.init_P3D, self.init_mask = self.camera.reconstruct_with_two_views(self.initial_frame.keypoints_normed, self.current_frame.keypoints_normed, self.init_matches)
         if not success: return
         
         self.logger.info('Monocular initialization successfull')
@@ -278,7 +273,7 @@ class Tracker:
 
     def need_new_keyframe(self) -> bool:
         # if Frame.next_id < 5: return True
-        if Frame.next_id % 2 == 0: return True
+        if Frame.next_id % 3 == 0: return True
         return False
 
     def update_local_map(self) -> None:

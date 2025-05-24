@@ -10,11 +10,10 @@ from gtsam import noiseModel
 from gtsam.symbol_shorthand import X, T, C
 
 from .factors import BetweenFactorCamera
-
+from src.util import Geometry
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.util import Geometry
     from src.structs import Camera
 
 class FactorIndexDB:
@@ -67,8 +66,8 @@ class Optimizer:
 
         self.factor_db = FactorIndexDB()
         self.smart_params = SmartProjectionParams()
-        # self.smart_params.setDegeneracyMode(DegeneracyMode.HANDLE_INFINITY)
-        # self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
+        # self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
+        self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
         self.factors_to_update = []
 
         # Noise model: https://gtsam.org/2019/09/20/robust-noise-model.html
@@ -117,14 +116,13 @@ class Optimizer:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
         self.add_factor(BetweenFactorPose3(C(from_index), C(to_index), odom, noise_model))
 
-    def update_projection_factor(self, map_point_id: int, normed_pixels: tuple, pose_id: int, camera: 'Camera') -> None:
-        pixels = camera.normed_to_pixels(normed_pixels) # Get undistorted camera pixel coordinates
+    def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Twc = Geometry.SE3()) -> None:
         self.factor_db.add_map_point_observation(map_point_id, pixels, C(pose_id)) # Include pixel observation in factor DB
 
         observations = self.factor_db.observations(map_point_id) # Get observations from factor DB
         if len(observations) < 2: return # Need 2 or more observations before adding to FG
         K = Cal3_S2(camera.parameters_with_skew)
-        factor = SmartProjectionPoseFactorCal3_S2(self.pixel_noise, K, self.smart_params)
+        factor = SmartProjectionPoseFactorCal3_S2(self.pixel_noise, K, Twc, self.smart_params)
         for (kp, pose_id) in observations: factor.add(kp, pose_id) # Add all observations to the factor
         
         # If factor already exists in factor graph, update it and remove old
@@ -146,6 +144,8 @@ class Optimizer:
     def optimize(self, extra_updates: int = 0) -> None:
         for i in range(self.new_factors.size()): self.master_graph.add(self.new_factors.at(i)) # Add new nodes to master graph
         for index in self.factors_to_update: self.master_graph.remove(index) # Remove old factors from master graph
+
+        self.factors_to_update = [fac for fac in self.factors_to_update if self.isam.valueExists(fac)]
 
         # Perform incremental update to iSAM, and remove/readd nodes to be updated
         self.isam.update(self.new_factors, self.new_nodes, self.factors_to_update)

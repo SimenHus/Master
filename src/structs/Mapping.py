@@ -87,7 +87,6 @@ class MapPointDB:
 class MapPoint:
     next_id = 0
 
-
     def __init__(self, pos: 'Geometry.Vector3', ref_keyframe: 'KeyFrame', map: 'Map') -> None:
         
         self.observations: dict['KeyFrame': int] = {} # Keyframe ID: observation ID in keyframe
@@ -148,6 +147,9 @@ class MapPoint:
         # self.min_distance = self.max_distance / reference_keyframe.scale_factors[-1]
         self.normal_vector = normal
 
+    def set_init_descriptor(self, desc: cv2.Mat) -> None:
+        self.descriptor = desc
+
     def compute_distinct_descriptor(self) -> None:
         """Loop through descriptors of all observations of this map point.
         The descriptor with the lowest median to other points is chosen as descriptor"""
@@ -157,28 +159,21 @@ class MapPoint:
 
         descriptors = [kf.descriptors[index] for kf, index in observations.items()]
 
-        distances = np.zeros((N-1, N-1))
-        for i, desc_i in enumerate(descriptors[:-1]):
+        distances = np.zeros((N, N))
+        for i, desc_i in enumerate(descriptors):
             for j, desc_j in enumerate(descriptors[i+1:]):
                 dist_ij = DataAssociation.Matcher.descriptor_distance(desc_i, desc_j)
                 distances[i, j] = dist_ij
                 distances[j, i] = dist_ij
 
-        best_median = -1
-        best_id = -1
 
-        for i in range(N-1):
-            dists = distances[i, :]
-            dists = np.sort(dists)
-            median = np.median(dists)
-            if median < best_median or best_median == -1:
-                best_median = median
-                best_id = i
-        self.descriptor = copy(descriptors[best_id])
+        mean_dist = distances.mean(axis=1)
+        best_id = np.argmin(mean_dist)
+        self.descriptor = descriptors[best_id]
 
     def __eq__(self, other) -> bool:
         if not isinstance(other, MapPoint): return False
-        return self.id == other.id or DataAssociation.Matcher.is_match(self.descriptor, other.descriptor)
+        return self.id == other.id or DataAssociation.Matcher.is_match(self, other)
 
     def as_dict(self) -> dict:
         return {

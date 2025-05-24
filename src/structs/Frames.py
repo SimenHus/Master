@@ -69,15 +69,18 @@ class Frame(Common):
         self.descriptors: list[cv2.Mat] = descriptors # List of descriptors
 
     def undistort_keypoints(self) -> None:
-        kps = np.array([kp.pt for kp in self.keypoints])
-        kps_und = cv2.undistortPoints(kps, self.camera.K, np.array(self.camera.dist_coeffs))
-        kps_und = kps_und[:, 0, :]
+        kps = np.array([kp.pt for kp in self.keypoints], dtype=np.float32).reshape(-1, 1, 2)
+        kps_norm = cv2.undistortPoints(kps, self.camera.K, np.array(self.camera.dist_coeffs)).reshape(-1, 2)
 
         self.keypoints_und: list[cv2.KeyPoint] = [] # Undistorted keypoints
+        self.keypoints_normed: list[cv2.KeyPoint] = [] # Undistorted normalized keypoints
         for i, kp in enumerate(self.keypoints):
-            x, y = kps_und[i, :]
-            kp_result = cv2.KeyPoint(x, y, kp.size, kp.angle, kp.response, kp.octave, kp.class_id)
-            self.keypoints_und.append(kp_result)
+            x_norm, y_norm = kps_norm[i, :]
+            x_und, y_und = self.camera.normed_to_pixels((x_norm, y_norm))
+            kp_und = cv2.KeyPoint(x_und, y_und, kp.size, kp.angle, kp.response, kp.octave, kp.class_id)
+            kp_norm = cv2.KeyPoint(x_norm, y_norm, kp.size, kp.angle, kp.response, kp.octave, kp.class_id)
+            self.keypoints_und.append(kp_und)
+            self.keypoints_normed.append(kp_norm)
 
 
 class KeyFrame(Common):
@@ -89,9 +92,10 @@ class KeyFrame(Common):
         self.timestep = 0 if not frame else frame.timestep
         self._map_points = MapPointDB() if not frame else frame._map_points
         self.scale_factors = [] if not frame else frame.scale_factors
-        self.keypoints: list[cv2.KeyPoint] = [] if not frame else frame.keypoints
         self.descriptors: list[cv2.Mat] = [] if not frame else copy(frame.descriptors) # Copy to make sure we do not alter the frame descriptors
+        self.keypoints: list[cv2.KeyPoint] = [] if not frame else frame.keypoints
         self.keypoints_und: list[cv2.KeyPoint] = [] if not frame else frame.keypoints_und
+        self.keypoints_normed: list[cv2.KeyPoint] = [] if not frame else frame.keypoints_normed
 
         self.origin_map_id = 0 if not map else map.get_id()
         
@@ -124,5 +128,6 @@ class KeyFrame(Common):
             'timestep': self.timestep,
             'keypoints': [kp.pt for kp in self.keypoints],
             'keypoints_und': [kp.pt for kp in self.keypoints_und],
+            'keypoints_normed': [kp.pt for kp in self.keypoints_normed],
             'Twc': self.get_pose_inverse().matrix().tolist()
         }

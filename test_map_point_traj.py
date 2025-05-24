@@ -41,45 +41,29 @@ class Application:
 
 
     def start(self):
-        init_ids = []
-        init_ts = []
-        for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
-            if i > 1: break
-            init_ids.append(int(kf_id))
-            init_ts.append(keyframe['timestep'])
-
-        T0 = self.poses[init_ts[0]]
-        T1 = self.poses[init_ts[1]]
-        Twc0 = T0.compose(self.Twc_gt)
-        Twc1 = T1.compose(self.Twc_gt)
-        # Twc0 = Geometry.SE3()
-        prior_sigmas = [0.1, 0.1, 0.1, 0.3, 0.3, 0.3]
-        self.optimizer.add_camera_prior(Twc0, init_ids[0], prior_sigmas) # Add prior for first camera pose based on initial guess of extrinsics
-        self.optimizer.add_camera_prior(Twc1, init_ids[1], prior_sigmas) # Add prior for first camera pose based on initial guess of extrinsics
+        optim_from_i = 1
+        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
+        prior_stop_i = 2
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(keyframe['id'])
 
             ref_pose = self.poses[keyframe['timestep']] # Get ref pose gt from file
-            Tc0c = Geometry.SE3(keyframe['Twc']) # Get estimated pose from camera triangulation
-
-            # cam_pose = Twc0.compose(Tc0c)
-            cam_pose = ref_pose.compose(self.Twc_gt)
-
-            self.optimizer.add_camera_node(cam_pose, kf_id_int) # Add node for camera pose
+            # cam_pose = ref_pose.compose(self.Twc_gt)
+            cam_pose = ref_pose
+            if i <= prior_stop_i: self.optimizer.add_camera_prior(cam_pose, kf_id_int, prior_sigmas)
+            self.optimizer.add_camera_node(cam_pose, kf_id_int) # Add node for camera poses
 
             for map_point in self.map_points.values():
                 observations = map_point['observations']
-                if len(observations) < 3: continue # Skip map points with few observations
+                if len(observations) < 4: continue # Skip map points with few observations
                 if kf_id not in observations.keys(): continue # Map point not in frame
                 mp_id = int(map_point['id'])
                 kp = keyframe['keypoints_und'][observations[kf_id]]
-                self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
-            if i > 0:
+                self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera, self.Twc_gt)
+            if i >= optim_from_i:
                 self.optimizer.optimize() # Optimize after at least two timesteps have passed
-                if i % 2 == 0:
-                    self.optimizer.add_camera_prior(cam_pose, kf_id_int, prior_sigmas)
             print(i)
-            if i == 24: break
+            # if i == 11: break
 
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:

@@ -22,18 +22,13 @@ class Extractor:
 
 
 class Matcher:
-    THRESH_LOW: int = 15
+    THRESH_LOW: int = 5
     THRESH_HIGH: int = 50
-    HISTO_LENGTH: int = 30
-
-    def __init__(self, check_ori: bool = True) -> None:
-        self.check_orientation = check_ori
+    THRESH_SPATIAL = 0.1
+    KNN_RATIO = 0.75
 
     def search_for_initialization(self, frame1: 'Frame', frame2: 'Frame') -> list[cv2.DMatch]:
-
         matches = self.match(frame1.descriptors, frame2.descriptors)
-        matches = self.filter_matches(frame1.keypoints_und, frame2.keypoints_und, matches)
-        # Return matches sorted by distance (https://docs.opencv.org/4.x/dc/dc3/tutorial_py_matcher.html)
         return matches
     
     def map_points_by_descriptors(self, reference_frame: 'KeyFrame | Frame', other_frame: 'KeyFrame | Frame') -> dict[int, 'MapPoint']:
@@ -73,29 +68,32 @@ class Matcher:
     
             
     @classmethod
-    def is_match(clc, desc1: cv2.Mat, desc2: cv2.Mat) -> bool:
-        return clc.descriptor_distance(desc1, desc2) < clc.THRESH_LOW * 2
+    def is_match(clc, mp1: 'MapPoint', mp2: 'MapPoint') -> bool:
+        if clc.descriptor_distance(mp1.descriptor, mp2.descriptor) > clc.THRESH_HIGH: return False
+        # if np.linalg.norm(mp1.get_world_pos() - mp2.get_world_pos()) > clc.THRESH_SPATIAL: return False
+        return True
     
 
     @classmethod
-    def filter_matches(clc, kp1: list[cv2.KeyPoint], kp2: list[cv2.KeyPoint], matches: list[cv2.DMatch]) -> list[cv2.Mat]:
-        # sorted_matches: list[cv2.DMatch] = sorted(matches, key=lambda x: x.distance) # Sort matches by distance
-        matches = clc.remove_outliers(kp1, kp2, matches)
-        result = []
-        for match in matches:
-            if clc.THRESH_LOW < match.distance < clc.THRESH_HIGH:
-                result.append(match)
-        return result
+    def filter_matches(clc, matches_knn, ratio) -> list[cv2.Mat]:
+        # Lowes ratio filtering
+        good_matches = []
+        for (m, n) in matches_knn:
+            if m.distance > clc.THRESH_HIGH or m.distance < clc.THRESH_LOW: continue
+            if m.distance >= n.distance * ratio: continue
+            good_matches.append(m)
+        return good_matches
     
 
     @classmethod
     def match(clc, desc1: list[cv2.Mat], desc2: list[cv2.Mat]) -> list[cv2.DMatch]:
-        matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = matcher.match(desc1, desc2)
+        matcher = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=False)
+        matches_knn = matcher.knnMatch(desc1, desc2, k=2)
+        if len(matches_knn) == 1: return matches_knn[0]
+        matches = clc.filter_matches(matches_knn, clc.KNN_RATIO)
     
         return matches
     
     @classmethod
     def descriptor_distance(clc, desc1: cv2.Mat, desc2: cv2.Mat) -> int:
-        match = clc.match(desc1.reshape(1, desc1.shape[0]), desc2.reshape(1, desc2.shape[0]))[0]
-        return match.distance
+        return cv2.norm(desc1, desc2, cv2.NORM_HAMMING)
