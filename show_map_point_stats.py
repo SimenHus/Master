@@ -45,7 +45,7 @@ class MapPointStats:
                 frame_id = str(frame_id)
                 if frame_id not in obs: obs[frame_id] = 0
                 obs[frame_id] += 1
-
+        
         ax.set_title(f'Number of KeyFrames: {len(obs)}')
         ax.set_xlabel('KeyFrame ID')
         ax.set_ylabel('Number of MapPoints per keyframe')

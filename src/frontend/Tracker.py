@@ -142,10 +142,11 @@ class Tracker:
 
             # Add map point to current frame
             current_frame.add_map_point(map_point, match.trainIdx)
-            map_point.add_observation(current_frame, match.trainIdx)
+            map_point.add_temp_observation(current_frame, match.trainIdx)
 
             map_point.compute_distinct_descriptor() # Create/Update distinct descriptor
             map_point.update_normal_and_depth()
+
 
         # Perform pose optimization to get better pose estimate???
 
@@ -268,17 +269,18 @@ class Tracker:
         self.last_keyframe_id = self.current_frame.id
         self.last_keyframe = keyframe
 
+        # Verify keyframe observation / map points match
+        for map_point in keyframe.get_map_points():
+            if keyframe not in map_point.get_observations():
+                map_point.convert_observation(self.current_frame, keyframe)
+                map_point.compute_distinct_descriptor()
+
         self.atlas.add_keyframe(keyframe) # May need to be moved / removed
 
 
     def need_new_keyframe(self) -> bool:
-        # if Frame.next_id < 5: return True
-        if Frame.next_id % 3 == 0: return True
+        if Frame.next_id - self.last_keyframe_id > 3: return True
         return False
-
-    def update_local_map(self) -> None:
-        self.update_local_keyframes()
-        self.update_local_points()
 
 
     def update_local_keyframes(self) -> None:
@@ -318,15 +320,14 @@ class Tracker:
             for map_point in local_keyframe.get_map_points():
                 self.local_map_points.add(map_point)
 
-
-    def search_local_points(self) -> None:
-        pass
+    def update_local_map(self) -> None:
+        self.update_local_keyframes()
+        self.update_local_points()
 
     def track_local_map(self) -> bool:
         """Called when we have an estimation of camera pose and some map points are tracked in current frame.
         Retrieve local map and try to find matches to points in local map"""
         self.update_local_map()
-        self.search_local_points()
 
         # Perform pose optimization
         # optimizer.pose_optimization(self.current_frame)

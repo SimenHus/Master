@@ -7,7 +7,7 @@ from copy import copy
 
 from typing import TYPE_CHECKING
 if TYPE_CHECKING:
-    from src.structs import KeyFrame
+    from src.structs import KeyFrame, Frame
 
 
 class MapPointDB:
@@ -90,6 +90,7 @@ class MapPoint:
     def __init__(self, pos: 'Geometry.Vector3', ref_keyframe: 'KeyFrame', map: 'Map') -> None:
         
         self.observations: dict['KeyFrame': int] = {} # Keyframe ID: observation ID in keyframe
+        self.temp_observations: dict['Frame': int] = {} # Frame ID: observation ID in frame
         self.reference_keyframe = ref_keyframe
         self.map = map
 
@@ -121,6 +122,13 @@ class MapPoint:
     def get_observations(self) -> dict: return self.observations
 
     def add_observation(self, keyframe: 'KeyFrame', id: int) -> None: self.observations[keyframe] = id
+    def add_temp_observation(self, frame: 'Frame', id: int) -> None: self.temp_observations[frame] = id
+
+    def convert_observation(self, frame: 'Frame', keyframe: 'KeyFrame') -> None:
+        id_in_frame = self.temp_observations.pop(frame)
+        self.add_observation(keyframe, id_in_frame)
+        
+        
 
     def update_normal_and_depth(self) -> None:
         observations = self.observations

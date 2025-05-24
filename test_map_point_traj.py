@@ -41,29 +41,30 @@ class Application:
 
 
     def start(self):
-        optim_from_i = 1
-        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
+        optim_start_i = 1
         prior_stop_i = 2
+        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(keyframe['id'])
 
             ref_pose = self.poses[keyframe['timestep']] # Get ref pose gt from file
             # cam_pose = ref_pose.compose(self.Twc_gt)
             cam_pose = ref_pose
-            if i <= prior_stop_i: self.optimizer.add_camera_prior(cam_pose, kf_id_int, prior_sigmas)
             self.optimizer.add_camera_node(cam_pose, kf_id_int) # Add node for camera poses
+            if i <= prior_stop_i: self.optimizer.add_camera_prior(cam_pose, kf_id_int, prior_sigmas) # Add prior for selected starting nodes
 
             for map_point in self.map_points.values():
                 observations = map_point['observations']
-                if len(observations) < 4: continue # Skip map points with few observations
+                if len(observations) < 3: continue # Skip map points with few observations
                 if kf_id not in observations.keys(): continue # Map point not in frame
                 mp_id = int(map_point['id'])
                 kp = keyframe['keypoints_und'][observations[kf_id]]
                 self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera, self.Twc_gt)
-            if i >= optim_from_i:
-                self.optimizer.optimize() # Optimize after at least two timesteps have passed
+
+
+            if i >= optim_start_i: self.optimizer.optimize() # Optimize after at least two timesteps have passed
             print(i)
-            # if i == 11: break
+            # if i == 4: break
 
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:

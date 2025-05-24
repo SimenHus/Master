@@ -34,7 +34,7 @@ class Camera:
         im1_kps = np.array([kps1[match.queryIdx].pt for match in matches12])
         im2_kps = np.array([kps2[match.trainIdx].pt for match in matches12])
         
-        dist_thresh = 100.
+        dist_thresh = 1.
         E, mask = cv2.findEssentialMat(im1_kps, im2_kps, self.K, cv2.RANSAC, 0.999, 1.0) # Get essential matrix using same points in the two images
         if E is None: return False, None, None, None
         retval, R, t, mask, triangulated_points = cv2.recoverPose(E, im1_kps, im2_kps, self.K, dist_thresh, triangulatedPoints=None, mask=mask) # Recover pose from the two images using the calculated essential matrix
