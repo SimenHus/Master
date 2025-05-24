@@ -80,7 +80,7 @@ class Optimizer:
 
         self.isam_parameters = ISAM2Params()
         # self.isam_parameters.setRelinearizeThreshold(0.0)
-        # self.isam_parameters.relinearizeSkip = 6
+        # self.isam_parameters.relinearizeSkip = 1
         self.isam = ISAM2(self.isam_parameters)
 
     def add_factor(self, factor, id: 'int | None' = None) -> None:
