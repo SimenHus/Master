@@ -24,7 +24,7 @@ class CameraExtrinsicCalibration:
 
 
 
-        n = 50
+        n = 100
         # self.images: list[list[cv2.Mat, int]] = data_load_home(data_folder, n)
         self.images: list[ImageData] = DataLoader.load_stx_images(data_folder, n)
 

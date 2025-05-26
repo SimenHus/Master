@@ -32,6 +32,7 @@ class BetweenFactorCamera(CustomFactor):
         prediction = T_ref.compose(T_rel, H_ref, H_rel)
         error = Pose3.localCoordinates(T_cam, prediction, H_cam)
 
+        print(error)
         if H is not None:
             H[0] = -H_cam@H_ref
             H[1] = -H_cam@H_rel

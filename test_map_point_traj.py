@@ -1,6 +1,6 @@
 
 
-from src.backend import Optimizer
+from src.backend import Optimizer, NodeType
 from src.structs import Camera
 from src.util import Geometry, DataLoader, Time, Geode
 import json
@@ -18,7 +18,7 @@ class Application:
         self.load_keyframes('./output/KeyFrames.json')
         self.load_ref_pose_gt('./datasets/osl/data')
 
-        self.camera, self.Twc_gt = DataLoader.load_stx_camera('./datasets/osl')
+        self.camera, self.Trc_gt = DataLoader.load_stx_camera('./datasets/osl')
 
     def load_map_points(self, path):
         with open(path, 'r') as f: self.map_points = json.load(f)
@@ -41,30 +41,43 @@ class Application:
 
 
     def start(self):
-        optim_start_i = 1
-        prior_stop_i = 2
+        iter_before_optim = 1
+        n_priors = 2
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
+        anchor_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
+        detected_mps = set()
+
+        Trc = self.Trc_gt
+        # Trc = Geometry.SE3()
+        self.optimizer.add_pose_node(Trc, self.camera.id, NodeType.EXTRINSIC)
+        # self.optimizer.add_pose_equality(Trc, self.camera.id, NodeType.EXTRINSIC)
+        self.optimizer.add_pose_prior(Trc, self.camera.id, NodeType.EXTRINSIC, [1e-6]*6)
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(keyframe['id'])
 
             ref_pose = self.poses[keyframe['timestep']] # Get ref pose gt from file
-            # cam_pose = ref_pose.compose(self.Twc_gt)
-            cam_pose = ref_pose
-            self.optimizer.add_camera_node(cam_pose, kf_id_int) # Add node for camera poses
-            if i <= prior_stop_i: self.optimizer.add_camera_prior(cam_pose, kf_id_int, prior_sigmas) # Add prior for selected starting nodes
+            cam_pose = ref_pose.compose(Trc)
+            self.optimizer.add_pose_node(cam_pose, kf_id_int, NodeType.CAMERA) # Add node for camera poses
+            self.optimizer.add_reference_anchor(self.camera.id, kf_id_int, ref_pose, anchor_sigmas)
 
+            overlap = False
             for map_point in self.map_points.values():
                 observations = map_point['observations']
                 if len(observations) < 3: continue # Skip map points with few observations
                 if kf_id not in observations.keys(): continue # Map point not in frame
                 mp_id = int(map_point['id'])
                 kp = keyframe['keypoints_und'][observations[kf_id]]
-                self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera, self.Twc_gt)
+                self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
+                if mp_id in detected_mps: overlap = True
+                else: detected_mps.add(mp_id)
 
+            if i < n_priors or not overlap:
+                print(f'Frame - Overlap: {i}-{overlap}')
+                self.optimizer.add_pose_prior(cam_pose, kf_id_int, NodeType.CAMERA, prior_sigmas) # Add prior
 
-            if i >= optim_start_i: self.optimizer.optimize() # Optimize after at least two timesteps have passed
+            if i >= iter_before_optim: self.optimizer.optimize() # Optimize after at least two timesteps have passed
             print(i)
-            # if i == 4: break
+            if i == 9: break
 
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
@@ -73,7 +86,7 @@ class Application:
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             # print(kf_id, Time.TimeConversion.POSIX_to_STX(keyframe['timestep']))
             ref_pose = self.poses[keyframe['timestep']]
-            cam_pose = ref_pose.compose(self.Twc_gt)
+            cam_pose = ref_pose.compose(self.Trc_gt)
             ref_traj[i, :] = Geometry.SE3.to_STX(ref_pose)
             cam_traj[i, :] = Geometry.SE3.to_STX(cam_pose)
 
@@ -90,8 +103,8 @@ class Application:
         cam_traj = np.empty([len(self.keyframes), 6])
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(kf_id)
-            # ref_pose = self.poses[keyframe['timestep']]
-            cam_pose = self.optimizer.get_camera_node_estimate(kf_id_int)
+            # ref_pose = self.optimizer.get_ref_node_estimate(kf_id_int)
+            cam_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.CAMERA)
             if not cam_pose:
                 cam_traj[i, :] = np.nan
                 continue
@@ -133,3 +146,5 @@ if __name__ == '__main__':
     app.show()
     graph, estimate = app.optimizer.get_visualization_variables()
     Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
+    print(app.optimizer.get_pose_node_estimate(app.camera.id, NodeType.EXTRINSIC))
+    
