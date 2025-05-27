@@ -10,32 +10,22 @@ class BetweenFactorCamera(CustomFactor):
         super().__init__(noise_model, [ref_key, rel_key, cam_key], self.evaluateError)
 
     def evaluateError(self, _, values, H=None):
-        T_ref = values.atPose3(self.keys()[0])
-        T_rel = values.atPose3(self.keys()[1])
-        T_cam = values.atPose3(self.keys()[2])
+        Twr: Pose3 = values.atPose3(self.keys()[0])
+        Trc: Pose3 = values.atPose3(self.keys()[1])
+        Twc: Pose3 = values.atPose3(self.keys()[2])
 
-        H_ref = np.zeros((6, 6), dtype=np.float64, order='F')
-        H_rel = np.zeros((6, 6), dtype=np.float64, order='F')
-        H_cam = np.zeros((6, 6), dtype=np.float64, order='F')
-
-        # Between solution
-        # prediction = Pose3.between(T_ref, T_cam, H_ref, H_cam)
-        # error = Pose3.localCoordinates(T_rel, prediction, H_rel)
-
-        # TESTED NUMERICALLY
-        # if H is not None:
-        #     H[0] = -H_rel @ H_ref
-        #     H[1] = H_rel
-        #     H[2] = -H_rel @ H_cam
+        H1 = np.zeros((6, 6), dtype=np.float64, order='F')
+        H2 = np.zeros((6, 6), dtype=np.float64, order='F')
+        HLocal = np.zeros((6, 6), dtype=np.float64, order='F')
 
         # Compose solution
-        prediction = T_ref.compose(T_rel, H_ref, H_rel)
-        error = Pose3.localCoordinates(T_cam, prediction, H_cam)
+        prediction = Twr.compose(Trc, H1, H2)
+        error = Pose3.localCoordinates(Twc, prediction, HLocal)
 
-        print(error)
         if H is not None:
-            H[0] = -H_cam@H_ref
-            H[1] = -H_cam@H_rel
-            H[2] = H_cam
+            H[0] = -HLocal@H1
+            H[1] = -HLocal@H2
+            H[2] = HLocal
+
 
         return error

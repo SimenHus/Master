@@ -38,6 +38,6 @@ class KinematicCameraFactor(CustomFactor):
             H[0] = -HLocal@H1
             H[1] = -HLocal@H2
             # H[2] = HLocal@H4@H3
-            H[2] = -H4@J
+            H[2] = HLocal@H4@J
 
         return error

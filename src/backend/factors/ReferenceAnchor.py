@@ -21,19 +21,19 @@ class ReferenceAnchor(CustomFactor):
 
 
         # Forward solution
-        # prediction = self.measurement.compose(T_rel, H_meas, H_rel)
-        # error = Pose3.localCoordinates(T_cam, prediction, HLocal)
-
-        # if H is not None:
-        #     H[0] = -HLocal@H_rel
-        #     H[1] = HLocal
-
-        # Inverse solution
-        prediction = Twc.compose(Trc.inverse(H1), H2, H3)
-        error = Pose3.localCoordinates(self.measurement, prediction, HLocal)
+        prediction = self.measurement.compose(Trc, H1, H2)
+        error = Pose3.localCoordinates(Twc, prediction, HLocal)
 
         if H is not None:
-            H[0] = -HLocal@H3@H1
-            H[1] = -HLocal@H2
+            H[0] = -HLocal@H2
+            H[1] = HLocal
+
+        # Inverse solution
+        # prediction = Twc.compose(Trc.inverse(H1), H2, H3)
+        # error = Pose3.localCoordinates(self.measurement, prediction, HLocal)
+
+        # if H is not None:
+        #     H[0] = -HLocal@H3@H1
+        #     H[1] = -HLocal@H2
 
         return error

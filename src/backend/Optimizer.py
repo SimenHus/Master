@@ -167,7 +167,7 @@ class Optimizer:
 
     def optimize(self, extra_updates: int = 0) -> None:
         new_factors, removal_indeces = self.factor_db.prepare_update()
-        # print(removal_indeces, new_factors.size())
+        
         # Perform incremental update to iSAM, and remove/readd nodes to be updated
         self.isam.update(new_factors, self.new_nodes, removal_indeces)
         for _ in range(extra_updates): self.isam.update() # Perform extra updates

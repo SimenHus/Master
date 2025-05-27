@@ -42,7 +42,7 @@ class Application:
                 ref_ecef = state.position
                 ref_lla = data.lla
             NED = Geode.Transformation.ECEF_to_NED(state.position, ref_ecef, ref_lla)
-            state.position = NED
+            # state.position = NED
             self.states[data.timestep] = data.state
 
 
@@ -53,13 +53,15 @@ class Application:
 
         kinetic_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-1
+        between_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-4
 
         noisy_vals = np.append(np.array([-1, 2, -4])*np.pi/180, [0.2, -0.2, 0.1])
         Trc_init_noise = Geometry.SE3.Expmap(noisy_vals)
         Trc_init = self.Trc_gt.compose(Trc_init_noise)
+        # Trc_init = Geometry.SE3()
 
         self.optimizer.add_pose_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
-        self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, [1e-1]*6)
+        self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, [1e1]*6)
 
         last_kf_id = 0
         last_timestep = None
@@ -76,10 +78,14 @@ class Application:
             ref_sigmas = ref_state.sigmas
             cam_pose = ref_pose.compose(Trc) # Initial guess of cam pose
 
+            # self.optimizer.add_pose_node(ref_pose, kf_id_int, NodeType.REFERENCE) # Add node for reference poses
             self.optimizer.add_pose_node(cam_pose, kf_id_int, NodeType.CAMERA) # Add node for camera poses
+            # self.optimizer.add_pose_equality(ref_pose, kf_id_int, NodeType.REFERENCE)
             self.optimizer.add_reference_anchor(self.camera.id, kf_id_int, ref_pose, ref_sigmas)
+            # self.optimizer.add_camera_between_factor(kf_id_int, self.camera.id, kf_id_int, between_sigmas)
 
             if i < n_priors:
+                # self.optimizer.add_pose_prior(ref_pose, kf_id_int, NodeType.REFERENCE, prior_sigmas)
                 self.optimizer.add_pose_prior(cam_pose, kf_id_int, NodeType.CAMERA, prior_sigmas)
 
             if i > 0:
@@ -95,18 +101,20 @@ class Application:
                 if kf_id not in observations.keys(): continue # Map point not in frame
                 mp_id = int(map_point['id'])
                 kp = keyframe['keypoints_und'][observations[kf_id]]
-                self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
+                # self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
             
-            if i >= iter_before_optim:
-                try:
+            
+            try:
+                if i >= iter_before_optim:
                     self.optimizer.optimize() # Optimize after at least two timesteps have passed
-                except:
-                    break
+            except Exception as e:
+                break
+            finally:
+                print(i)
 
             last_kf_id = kf_id_int
             last_timestep = keyframe['timestep']
             last_state = ref_state
-            print(i)
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
         ref_traj = np.empty([len(self.keyframes), 6])
@@ -136,6 +144,7 @@ class Application:
         Trc_estim = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(kf_id)
+            ref_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.REFERENCE)
             cam_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.CAMERA)
             if not cam_pose:
                 ref_traj[i, :] = np.nan
