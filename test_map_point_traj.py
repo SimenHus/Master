@@ -16,7 +16,7 @@ class Application:
         self.optimizer = Optimizer()
         self.load_map_points('./output/MapPoints.json')
         self.load_keyframes('./output/KeyFrames.json')
-        self.load_ref_pose_gt('./datasets/osl/data')
+        self.load_gt('./datasets/osl/data')
 
         self.camera, self.Trc_gt = DataLoader.load_stx_camera('./datasets/osl')
 
@@ -26,69 +26,101 @@ class Application:
     def load_keyframes(self, path):
         with open(path, 'r') as f: self.keyframes = json.load(f)
 
-    def load_ref_pose_gt(self, path):
+    def load_gt(self, path):
         stx_data = DataLoader.load_stx_data(path)
         keyframe_timesteps = [kf['timestep'] for kf in self.keyframes.values()]
         filtered_data = [data for data in stx_data if data.timestep in keyframe_timesteps]
 
         sorted_data = sorted(filtered_data, key=lambda x: x.timestep)
-        ref_lla = sorted_data[0].lla
-        self.poses: dict[int: Geometry.SE3] = {}
+
+        self.states: dict[int: Geometry.State] = {}
+        ref_ecef = None
+        ref_lla = None
         for data in sorted_data:
-            NED = Geode.Transformation.LLA_to_NED(data.lla, ref_lla)
-            vals = np.append(data.att, NED)
-            self.poses[data.timestep] = Geometry.SE3.from_STX(vals)
+            state = data.state
+            if ref_ecef is None:
+                ref_ecef = state.position
+                ref_lla = data.lla
+            NED = Geode.Transformation.ECEF_to_NED(state.position, ref_ecef, ref_lla)
+            state.position = NED
+            self.states[data.timestep] = data.state
 
 
     def start(self):
         iter_before_optim = 1
+        iter_before_mpts = 0
         n_priors = 2
-        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
-        anchor_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
-        detected_mps = set()
 
-        Trc = self.Trc_gt
-        # Trc = Geometry.SE3()
-        self.optimizer.add_pose_node(Trc, self.camera.id, NodeType.EXTRINSIC)
-        # self.optimizer.add_pose_equality(Trc, self.camera.id, NodeType.EXTRINSIC)
-        self.optimizer.add_pose_prior(Trc, self.camera.id, NodeType.EXTRINSIC, [1e-6]*6)
+        kinetic_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
+        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-1
+
+        noisy_vals = np.append(np.array([-1, 2, -4])*np.pi/180, [0.2, -0.2, 0.1])
+        Trc_init_noise = Geometry.SE3.Expmap(noisy_vals)
+        Trc_init = self.Trc_gt.compose(Trc_init_noise)
+
+        self.optimizer.add_pose_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
+        self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, [1e-1]*6)
+
+        last_kf_id = 0
+        last_timestep = None
+        last_state = None
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(keyframe['id'])
+            current_timestep = keyframe['timestep']
 
-            ref_pose = self.poses[keyframe['timestep']] # Get ref pose gt from file
-            cam_pose = ref_pose.compose(Trc)
+            Trc = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
+            if Trc is None: Trc = Trc_init
+
+            ref_state = self.states[current_timestep] # Get ref state gt from file
+            ref_pose = ref_state.pose
+            ref_sigmas = ref_state.sigmas
+            cam_pose = ref_pose.compose(Trc) # Initial guess of cam pose
+
             self.optimizer.add_pose_node(cam_pose, kf_id_int, NodeType.CAMERA) # Add node for camera poses
-            self.optimizer.add_reference_anchor(self.camera.id, kf_id_int, ref_pose, anchor_sigmas)
+            self.optimizer.add_reference_anchor(self.camera.id, kf_id_int, ref_pose, ref_sigmas)
 
-            overlap = False
+            if i < n_priors:
+                self.optimizer.add_pose_prior(cam_pose, kf_id_int, NodeType.CAMERA, prior_sigmas)
+
+            if i > 0:
+                dt_posix = current_timestep - last_timestep
+                dt = Time.TimeConversion.dt_POSIX_to_SEC(dt_posix)
+                sigmas = kinetic_sigmas * dt
+                self.optimizer.add_kinematic_factor(last_kf_id, kf_id_int, self.camera.id, NodeType.CAMERA, last_state, dt, sigmas)
+
             for map_point in self.map_points.values():
                 observations = map_point['observations']
+                if i < iter_before_mpts: break
                 if len(observations) < 3: continue # Skip map points with few observations
                 if kf_id not in observations.keys(): continue # Map point not in frame
                 mp_id = int(map_point['id'])
                 kp = keyframe['keypoints_und'][observations[kf_id]]
                 self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
-                if mp_id in detected_mps: overlap = True
-                else: detected_mps.add(mp_id)
+            
+            if i >= iter_before_optim:
+                try:
+                    self.optimizer.optimize() # Optimize after at least two timesteps have passed
+                except:
+                    break
 
-            if i < n_priors or not overlap:
-                print(f'Frame - Overlap: {i}-{overlap}')
-                self.optimizer.add_pose_prior(cam_pose, kf_id_int, NodeType.CAMERA, prior_sigmas) # Add prior
-
-            if i >= iter_before_optim: self.optimizer.optimize() # Optimize after at least two timesteps have passed
+            last_kf_id = kf_id_int
+            last_timestep = keyframe['timestep']
+            last_state = ref_state
             print(i)
-            if i == 9: break
-
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
         ref_traj = np.empty([len(self.keyframes), 6])
         cam_traj = np.empty([len(self.keyframes), 6])
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             # print(kf_id, Time.TimeConversion.POSIX_to_STX(keyframe['timestep']))
-            ref_pose = self.poses[keyframe['timestep']]
+            ref_state = self.states[keyframe['timestep']]
+            ref_pose = ref_state.pose
             cam_pose = ref_pose.compose(self.Trc_gt)
-            ref_traj[i, :] = Geometry.SE3.to_STX(ref_pose)
-            cam_traj[i, :] = Geometry.SE3.to_STX(cam_pose)
+            # vec = Geometry.SE3.as_vector(ref_pose)
+            # if not np.allclose(vec[:3], ref_state.attitude*180/np.pi, rtol=1e-5):
+            #     print(f'GT: {ref_state.attitude*180/np.pi}, Trans: {vec[:3]}')
+            ref_traj[i, :] = Geometry.SE3.as_vector(ref_pose)
+            cam_traj[i, :] = Geometry.SE3.as_vector(cam_pose)
 
         for i in range(len(pos_axs)):
             ang_axs[i].plot(t, ref_traj[:, i], label='Ref-gt')
@@ -99,23 +131,25 @@ class Application:
 
 
     def plot_estim(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
-        # ref_traj = np.empty([len(self.keyframes), 6])
+        ref_traj = np.empty([len(self.keyframes), 6])
         cam_traj = np.empty([len(self.keyframes), 6])
+        Trc_estim = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
             kf_id_int = int(kf_id)
-            # ref_pose = self.optimizer.get_ref_node_estimate(kf_id_int)
             cam_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.CAMERA)
             if not cam_pose:
+                ref_traj[i, :] = np.nan
                 cam_traj[i, :] = np.nan
                 continue
-            # ref_traj[i, :] = Geometry.SE3.to_STX(ref_pose)
-            cam_traj[i, :] = Geometry.SE3.to_STX(cam_pose)
+            ref_pose = cam_pose.compose(Trc_estim.inverse())
+            ref_traj[i, :] = Geometry.SE3.as_vector(ref_pose)
+            cam_traj[i, :] = Geometry.SE3.as_vector(cam_pose)
 
         for i in range(len(pos_axs)):
-            # ang_axs[i].plot(t, ref_traj[:, i], label='Ref-estim')
+            ang_axs[i].plot(t, ref_traj[:, i], label='Ref-estim')
             ang_axs[i].plot(t, cam_traj[:, i], label='Cam-estim')
 
-            # pos_axs[i].plot(t, ref_traj[:, i+3], label='Ref-estim')
+            pos_axs[i].plot(t, ref_traj[:, i+3], label='Ref-estim')
             pos_axs[i].plot(t, cam_traj[:, i+3], label='Cam-estim')
 
 
@@ -143,8 +177,11 @@ if __name__ == '__main__':
 
     app = Application()
     app.start()
-    app.show()
+    estim = app.optimizer.get_pose_node_estimate(app.camera.id, NodeType.EXTRINSIC)
+    gt = app.Trc_gt
+    print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
+    print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
     graph, estimate = app.optimizer.get_visualization_variables()
     Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
-    print(app.optimizer.get_pose_node_estimate(app.camera.id, NodeType.EXTRINSIC))
+    app.show()
     

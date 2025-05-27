@@ -1,6 +1,6 @@
 
 from src.structs import ImageData, STXData, Camera, LLA
-from src.util import Time, Geometry
+from src.util import Time, Geometry, Geode
 import cv2
 import glob
 import json
@@ -41,11 +41,18 @@ def load_stx_data(path, n = None) -> list[STXData]:
         data = data_all['own_vessel']
         unix_timestep = Time.TimeConversion.generic_to_POSIX(timestep)
         
+        acc = np.array(data['acceleration'])
+        atterror = np.array(data['atterror'])
+        poserror = np.array(data['poserror'])
+        attrate = np.array(data['attrate'])
+        vel = np.array(data['velocity'])
+        att = np.array(data['attitude']) * np.pi / 180
         lat, lon, alt = data['position']
         lla = LLA(lat, lon, alt)
-        att = np.array(data['attitude'])
+        ecef = Geode.Transformation.LLA_to_ECEF(lla)
+        state = Geometry.State(ecef, vel, acc, poserror, att, attrate, atterror)
 
-        result.append(STXData(lla, att, unix_timestep))
+        result.append(STXData(state, lla, unix_timestep))
 
     return sorted(result, key=lambda x: x.timestep)
 
@@ -60,5 +67,5 @@ def load_stx_camera(path, cam=1, lens=0) -> list[Camera, Geometry.SE3]:
     dist_coeffs = lens_info['distortion_coefficients']
     params = Camera.K_list_to_params(K_list)
     vals = np.append(att, pos)
-    pose = Geometry.SE3.from_STX(vals)
+    pose = Geometry.SE3.from_vector(vals, radians=False)
     return Camera(params, dist_coeffs), pose

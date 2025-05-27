@@ -20,6 +20,6 @@ class LLA:
 
 @dataclass
 class STXData:
+    state: Geometry.State
     lla: LLA
-    att: Geometry.Vector3
     timestep: str

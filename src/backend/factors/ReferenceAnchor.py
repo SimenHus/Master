@@ -11,20 +11,29 @@ class ReferenceAnchor(CustomFactor):
         self.measurement = measurement
 
     def evaluateError(self, _, values, H=None):
-        T_rel = values.atPose3(self.keys()[0])
-        T_cam = values.atPose3(self.keys()[1])
+        Trc = values.atPose3(self.keys()[0])
+        Twc = values.atPose3(self.keys()[1])
 
-        H_meas = np.zeros((6, 6), dtype=np.float64, order='F')
-        H_rel = np.zeros((6, 6), dtype=np.float64, order='F')
+        H1 = np.zeros((6, 6), dtype=np.float64, order='F')
+        H2 = np.zeros((6, 6), dtype=np.float64, order='F')
+        H3 = np.zeros((6, 6), dtype=np.float64, order='F')
         HLocal = np.zeros((6, 6), dtype=np.float64, order='F')
 
 
         # Forward solution
-        prediction = self.measurement.compose(T_rel, H_meas, H_rel)
-        error = Pose3.localCoordinates(T_cam, prediction, HLocal)
+        # prediction = self.measurement.compose(T_rel, H_meas, H_rel)
+        # error = Pose3.localCoordinates(T_cam, prediction, HLocal)
+
+        # if H is not None:
+        #     H[0] = -HLocal@H_rel
+        #     H[1] = HLocal
+
+        # Inverse solution
+        prediction = Twc.compose(Trc.inverse(H1), H2, H3)
+        error = Pose3.localCoordinates(self.measurement, prediction, HLocal)
 
         if H is not None:
-            H[0] = -HLocal@H_rel
-            H[1] = HLocal
+            H[0] = -HLocal@H3@H1
+            H[1] = -HLocal@H2
 
         return error

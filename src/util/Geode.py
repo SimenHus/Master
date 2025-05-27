@@ -20,7 +20,6 @@ class EPSG(Enum):
 class Transformation:
     _GPS_to_UTM32 = pyproj.Transformer.from_crs(EPSG.GPS.value, EPSG.UTM32.value, always_xy=True)
     _LLA_to_ECEF = pyproj.Transformer.from_crs(EPSG.LLA.value, EPSG.ECEF.value, always_xy=True)
-    
     @classmethod
     def GPS_to_UTM32(clc, lon, lat) -> 'Geometry.Vector3':
         return np.array(clc._GPS_to_UTM32.transform(lon, lat))

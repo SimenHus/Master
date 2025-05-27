@@ -12,12 +12,12 @@ from gtsam.symbol_shorthand import X, T, C
 
 from enum import Enum
 from dataclasses import dataclass
-from .factors import BetweenFactorCamera, ReferenceAnchor
+from .factors import BetweenFactorCamera, ReferenceAnchor, KinematicCameraFactor
 from src.util import Geometry
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.structs import Camera
+    from src.structs import Camera, Kinematics
 
 
 class NodeType(Enum):
@@ -112,57 +112,41 @@ class Optimizer:
         # self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
         self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
 
-        # Noise model: https://gtsam.org/2019/09/20/robust-noise-model.html
-        # Does not work with smartfactors???
-        # self.pixel_noise = noiseModel.Robust.Create(
-        #     noiseModel.mEstimator.Huber.Create(1.345),
-        #     noiseModel.Isotropic.Sigma(2, 1.0)
-        # )
-        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 1.5) # Pixel std deviation in u and v
+        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 2.5) # Pixel std deviation in u and v
 
         self.isam_parameters = ISAM2Params()
-        # self.isam_parameters.setRelinearizeThreshold(0.0)
-        # self.isam_parameters.relinearizeSkip = 5
+        # self.isam_parameters.setRelinearizeThreshold(0.1)
+        # self.isam_parameters.relinearizeSkip = 3
         self.isam = ISAM2(self.isam_parameters)
 
-    def add_factor(self, factor, identifier: str) -> None:
+    def _add_factor(self, factor, identifier: str) -> None:
         self.factor_db.add_pending(identifier, factor) # Add factor as pending to database
 
     def add_pose_node(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType) -> None:
         self.new_nodes.insert(node_type.value(pose_id), value)
 
+    def add_kinematic_factor(self, pose_from: int, pose_to: int, camera_id: int, node_type: NodeType, measurement: 'Geometry.State', dt: float, sigmas: list) -> None:
+        noise_model = noiseModel.Diagonal.Sigmas(sigmas)
+        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
+        extrinsics_key = NodeType.EXTRINSIC.value(camera_id)
+        self._add_factor(KinematicCameraFactor(from_key, to_key, extrinsics_key, measurement, dt, noise_model), f'Kinematics{from_key}-{extrinsics_key}-{to_key}')
+
     def add_pose_equality(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType) -> None:
         key = node_type.value(pose_id)
-        self.add_factor(NonlinearEqualityPose3(key, value), f'Equality{key}')
+        self._add_factor(NonlinearEqualityPose3(key, value), f'Equality{key}')
 
     def add_pose_prior(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType, sigma: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigma)
         key = node_type.value(pose_id)
-        self.add_factor(PriorFactorPose3(key, value, noise_model), f'Prior{key}')
+        self._add_factor(PriorFactorPose3(key, value, noise_model), f'Prior{key}')
 
     def add_camera_between_factor(self, ref_index: int, camera_id: int, camera_pose_id: int, sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        extrinsic_noise = noiseModel.Robust.Create(
-            noiseModel.mEstimator.Huber.Create(1.345),
-            noise_model
-        )
-        self.add_factor(BetweenFactorCamera(X(ref_index), T(camera_id), C(camera_pose_id), extrinsic_noise), f'RefExtCam{ref_index}-{camera_id}-{camera_pose_id}')
+        self._add_factor(BetweenFactorCamera(X(ref_index), T(camera_id), C(camera_pose_id), noise_model), f'RefExtCam{ref_index}-{camera_id}-{camera_pose_id}')
 
     def add_reference_anchor(self, camera_id: int, camera_pose_id: int, ref_pose: 'Geometry.SE3', sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        extrinsic_noise = noiseModel.Robust.Create(
-            noiseModel.mEstimator.Huber.Create(1.345),
-            noise_model
-        )
-        self.add_factor(ReferenceAnchor(T(camera_id), C(camera_pose_id), ref_pose, extrinsic_noise), f'RefAnchor{camera_id}-{camera_pose_id}')
-
-    def add_ref_odom_factor(self, from_index: int, to_index: int, odom: 'Geometry.SE3', sigmas: list) -> None:
-        noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        self.add_factor(BetweenFactorPose3(X(from_index), X(to_index), odom, noise_model), f'RefOdom{from_index}-{to_index}')
-    
-    def add_camera_odom_factor(self, from_index: int, to_index: int, odom: 'Geometry.SE3', sigmas: list) -> None:
-        noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        self.add_factor(BetweenFactorPose3(C(from_index), C(to_index), odom, noise_model), f'CamOdom{from_index}-{to_index}')
+        self._add_factor(ReferenceAnchor(T(camera_id), C(camera_pose_id), ref_pose, noise_model), f'RefAnchor{camera_id}-{camera_pose_id}')
 
     def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Twc = Geometry.SE3()) -> None:
         identifier = f'MapPoint{map_point_id}'
@@ -179,7 +163,7 @@ class Optimizer:
         if identifier in self.factor_db: self.factor_db.remove(identifier)
 
         # Add factor to factor graph
-        self.add_factor(factor, identifier)
+        self._add_factor(factor, identifier)
 
     def optimize(self, extra_updates: int = 0) -> None:
         new_factors, removal_indeces = self.factor_db.prepare_update()
