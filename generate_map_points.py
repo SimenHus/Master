@@ -26,13 +26,13 @@ class CameraExtrinsicCalibration:
 
         n = 100
         # self.images: list[list[cv2.Mat, int]] = data_load_home(data_folder, n)
-        self.images: list[ImageData] = DataLoader.load_stx_images(data_folder, n)
+        self.images: list[ImageData] = DataLoader.load_stx_images(data_folder, './output', n)
 
 
     def start(self) -> None:
         
         for image in self.images:
-            self.SLAM.track_monocular(image.image, image.timestep)
+            self.SLAM.track_monocular(image.image, image.timestep, mask=image.mask)
 
     def save_keyframes(self, filename: 'str') -> None:
         self.SLAM.save_keyframes(filename)

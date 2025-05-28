@@ -8,20 +8,25 @@ import numpy as np
 
 
 
-def load_stx_images(path, n = None) -> list[ImageData]:
+def load_stx_images(path, mask_path = None, n = None) -> list[ImageData]:
     suffix = 'jpg'
     images = path + f'/*.{suffix}'
 
     list_of_images = glob.glob(images)
+    if mask_path is None:
+        mask = np.ones_like(cv2.imread(list_of_images[0], cv2.IMREAD_GRAYSCALE), dtype=np.uint8) * 255
+    else:
+        mask = cv2.imread(f'{mask_path}/static_mask.png', cv2.IMREAD_GRAYSCALE)
 
     result = []
     if n is None: n = len(list_of_images)
     n_files = len(list_of_images) if len(list_of_images) < n else n
     for i, image_file in enumerate(list_of_images[:n_files]):
+        if mask_path is not None: pass
         image = cv2.imread(image_file, cv2.IMREAD_GRAYSCALE)
         timestep = image_file.split('/')[-1].strip(f'.{suffix}')
         unix_timestep = Time.TimeConversion.STX_to_POSIX(timestep)
-        frame = ImageData(image, unix_timestep, timestep)
+        frame = ImageData(image, unix_timestep, timestep, mask)
         result.append(frame)
 
     return sorted(result, key=lambda x: x.timestep)

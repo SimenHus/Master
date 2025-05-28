@@ -30,10 +30,10 @@ class System:
 
         Logging.setup_logging('./debug')
 
-    def track_monocular(self, image: cv2.Mat, timestep: int) -> Geometry.SE3:
+    def track_monocular(self, image: cv2.Mat, timestep: int, mask = None) -> Geometry.SE3:
         """Start of SLAM pipeline, incoming frames are sent here"""
         # Perform checks / changes with frame
-        Tcw: Geometry.SE3 = self.tracker.grab_image_monocular(image, timestep)
+        Tcw: Geometry.SE3 = self.tracker.grab_image_monocular(image, timestep, mask)
 
         self.tracking_state = self.tracker.state
         self.tracked_map_points = self.tracker.current_frame.get_map_points()

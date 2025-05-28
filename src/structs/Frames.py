@@ -32,11 +32,12 @@ class Common:
 class Frame(Common):
     next_id = 0 # Class shared variable
 
-    def __init__(self, image: 'cv2.Mat', timestep: int, extractor: 'DataAssociation.Extractor', camera: 'Camera') -> None:
+    def __init__(self, image: 'cv2.Mat', timestep: int, extractor: 'DataAssociation.Extractor', camera: 'Camera', mask = None) -> None:
         self.image = image
         self.timestep = timestep
         self.camera = camera
         self.extractor = extractor
+        self.mask = mask
 
         self.id = Frame.next_id
         Frame.next_id += 1 # Update the class shared counter
@@ -64,7 +65,7 @@ class Frame(Common):
         return copy(frame)
 
     def extract_features(self) -> None:
-        keypoints, descriptors = self.extractor.extract(self.image, None)
+        keypoints, descriptors = self.extractor.extract(self.image, self.mask)
         self.keypoints: list[cv2.KeyPoint] = keypoints # List of keypoints
         self.descriptors: list[cv2.Mat] = descriptors # List of descriptors
 
@@ -96,6 +97,7 @@ class KeyFrame(Common):
         self.keypoints: list[cv2.KeyPoint] = [] if not frame else frame.keypoints
         self.keypoints_und: list[cv2.KeyPoint] = [] if not frame else frame.keypoints_und
         self.keypoints_normed: list[cv2.KeyPoint] = [] if not frame else frame.keypoints_normed
+        self.mask = None if not frame else frame.mask
 
         self.origin_map_id = 0 if not map else map.get_id()
         

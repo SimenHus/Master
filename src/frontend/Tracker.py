@@ -337,15 +337,17 @@ class Tracker:
         return self.matches_inliers >= inlier_threshold
 
 
-    def grab_image_monocular(self, image: cv2.Mat, timestep: int) -> Geometry.SE3:
+    def grab_image_monocular(self, image: cv2.Mat, timestep: int, mask = None) -> Geometry.SE3:
 
         # Process image in necessary ways (grayscale etc)
         frame = image
 
         if self.state == TrackerState.NOT_INITIALIZED or self.state == TrackerState.NO_IMAGES_YET:
-            self.current_frame = Frame(frame, timestep, self.init_extractor, self.camera)
+            extractor = self.init_extractor
         else:
-            self.current_frame = Frame(frame, timestep, self.mono_extractor, self.camera)
+            extractor = self.mono_extractor
+
+        self.current_frame = Frame(frame, timestep, extractor, self.camera, mask=mask)
 
         if self.state == TrackerState.NO_IMAGES_YET:
             self.t0 = timestep

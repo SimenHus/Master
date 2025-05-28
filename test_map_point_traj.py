@@ -47,17 +47,18 @@ class Application:
 
     def start(self):
         n_priors = 2
+        prior_intervals = 20
 
         vel_ext_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
         vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e2
         odom_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
-        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-1
-        extrinsic_prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-1
+        prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
+        extrinsic_prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
 
         noisy_vals = np.append([-0.1, 0.2, -0.4], [0.2, -0.2, 0.1])
         Trc_init = Geometry.SE3.as_vector(self.Trc_gt) + noisy_vals
         Trc_init = Geometry.SE3.from_vector(Trc_init, radians=False)
-        Trc_init = self.Trc_gt
+        # Trc_init = self.Trc_gt
 
         self.optimizer.add_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
         self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, extrinsic_prior_sigmas)
@@ -67,11 +68,12 @@ class Application:
         for i, (timestep, state) in enumerate(self.states.items()):
             ekstra_optims = 0
             # PERFORM POSE / VELOCITY SLAM ON ALL FRAMES
-            Trc = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
+            Trc = self.optimizer.get_node_estimate(self.camera.id, NodeType.EXTRINSIC)
             if Trc is None: Trc = Trc_init
             self.Trc_traj.append(Trc)
+
             Twr = state.pose
-            Twc = Twr.compose(Trc)
+            Twc = Twr.compose(Trc_init)
             ref_sigmas = state.sigmas
             self.optimizer.add_node(Twc, i, NodeType.CAMERA)
             self.optimizer.add_reference_anchor(self.camera.id, i, Twr, ref_sigmas)
@@ -79,7 +81,7 @@ class Application:
             if i > 0:
                 dt_posix = timestep - last_timestep
                 dt = Time.TimeConversion.dt_POSIX_to_SECONDS(dt_posix)
-                # sigmas = vel_ext_sigmas * dt # Scale sigmas with dt
+                sigmas = vel_ext_sigmas * dt # Scale sigmas with dt
                 # self.optimizer.add_velocity_extrinsic_factor(i-1, i, self.camera.id, NodeType.CAMERA, last_state, dt, sigmas)
                 sigmas = vel_sigmas * dt
                 meas = Geometry.SE3.transform_twist(Trc, last_state.twist*dt)
@@ -88,7 +90,7 @@ class Application:
                 odom = Geometry.SE3.between(Twc0, Twc)
                 # self.optimizer.add_between_factor(i-1, i, NodeType.CAMERA, odom, odom_sigmas)
 
-            if i < n_priors:
+            if i < n_priors or i % prior_intervals == 0:
                 self.optimizer.add_pose_prior(Twc, i, NodeType.CAMERA, prior_sigmas)
 
             # Add reprojection of map points only for keyframes
@@ -105,13 +107,13 @@ class Application:
                     kp = keyframe['keypoints_und'][observations[kf_id]]
                     self.optimizer.update_projection_factor(mp_id, kp, i, self.camera)
                     add_optim = True
-                # if add_optim: ekstra_optims += 1
+                if add_optim: ekstra_optims += 1
             
             
             try:
                 self.optimizer.optimize(ekstra_optims) # Optimize after at least two timesteps have passed
             except Exception as e:
-                # print(e)
+                print(e)
                 break
             finally:
                 print(i)
@@ -140,10 +142,10 @@ class Application:
     def plot_estim(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
         ref_traj = np.empty([len(t), 6])
         cam_traj = np.empty([len(t), 6])
-        Trc_estim = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
+        Trc_estim = self.optimizer.get_node_estimate(self.camera.id, NodeType.EXTRINSIC)
         for i, (timestep, state) in enumerate(self.states.items()):
             # ref_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.REFERENCE)
-            Twc = self.optimizer.get_pose_node_estimate(i, NodeType.CAMERA)
+            Twc = self.optimizer.get_node_estimate(i, NodeType.CAMERA)
             if not Twc:
                 ref_traj[i, :] = np.nan
                 cam_traj[i, :] = np.nan
@@ -213,7 +215,7 @@ if __name__ == '__main__':
 
     app = Application()
     app.start()
-    estim = app.optimizer.get_pose_node_estimate(app.camera.id, NodeType.EXTRINSIC)
+    estim = app.optimizer.get_node_estimate(app.camera.id, NodeType.EXTRINSIC)
     gt = app.Trc_gt
     print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
     print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
