@@ -10,6 +10,7 @@ class ImageData:
     image: cv2.Mat
     timestep: str
     filename: str
+    mask: cv2.Mat
 
 @dataclass
 class LLA:

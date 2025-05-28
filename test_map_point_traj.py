@@ -25,110 +25,109 @@ class Application:
 
     def load_keyframes(self, path):
         with open(path, 'r') as f: self.keyframes = json.load(f)
+        self.kf_map = {} # timestep: kf_id
+        for kf_id, keyframe in self.keyframes.items():
+            self.kf_map[keyframe['timestep']] = kf_id
+
 
     def load_gt(self, path):
         stx_data = DataLoader.load_stx_data(path)
         keyframe_timesteps = [kf['timestep'] for kf in self.keyframes.values()]
+
         filtered_data = [data for data in stx_data if data.timestep in keyframe_timesteps]
+        filtered_data = stx_data
 
         sorted_data = sorted(filtered_data, key=lambda x: x.timestep)
 
         self.states: dict[int: Geometry.State] = {}
-        ref_ecef = None
-        ref_lla = None
+
         for data in sorted_data:
-            state = data.state
-            if ref_ecef is None:
-                ref_ecef = state.position
-                ref_lla = data.lla
-            NED = Geode.Transformation.ECEF_to_NED(state.position, ref_ecef, ref_lla)
-            # state.position = NED
             self.states[data.timestep] = data.state
 
 
     def start(self):
-        iter_before_optim = 1
-        iter_before_mpts = 0
         n_priors = 2
 
-        kinetic_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
+        vel_ext_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
+        vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e2
+        odom_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e1
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-1
-        between_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-4
+        extrinsic_prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-1
 
-        noisy_vals = np.append(np.array([-1, 2, -4])*np.pi/180, [0.2, -0.2, 0.1])
-        Trc_init_noise = Geometry.SE3.Expmap(noisy_vals)
-        Trc_init = self.Trc_gt.compose(Trc_init_noise)
-        # Trc_init = Geometry.SE3()
+        noisy_vals = np.append([-0.1, 0.2, -0.4], [0.2, -0.2, 0.1])
+        Trc_init = Geometry.SE3.as_vector(self.Trc_gt) + noisy_vals
+        Trc_init = Geometry.SE3.from_vector(Trc_init, radians=False)
+        Trc_init = self.Trc_gt
 
-        self.optimizer.add_pose_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
-        self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, [1e1]*6)
-
-        last_kf_id = 0
+        self.optimizer.add_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
+        self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, extrinsic_prior_sigmas)
+        self.Trc_traj: list[Geometry.SE3] = []
         last_timestep = None
         last_state = None
-        for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
-            kf_id_int = int(keyframe['id'])
-            current_timestep = keyframe['timestep']
-
+        for i, (timestep, state) in enumerate(self.states.items()):
+            ekstra_optims = 0
+            # PERFORM POSE / VELOCITY SLAM ON ALL FRAMES
             Trc = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
             if Trc is None: Trc = Trc_init
-
-            ref_state = self.states[current_timestep] # Get ref state gt from file
-            ref_pose = ref_state.pose
-            ref_sigmas = ref_state.sigmas
-            cam_pose = ref_pose.compose(Trc) # Initial guess of cam pose
-
-            # self.optimizer.add_pose_node(ref_pose, kf_id_int, NodeType.REFERENCE) # Add node for reference poses
-            self.optimizer.add_pose_node(cam_pose, kf_id_int, NodeType.CAMERA) # Add node for camera poses
-            # self.optimizer.add_pose_equality(ref_pose, kf_id_int, NodeType.REFERENCE)
-            self.optimizer.add_reference_anchor(self.camera.id, kf_id_int, ref_pose, ref_sigmas)
-            # self.optimizer.add_camera_between_factor(kf_id_int, self.camera.id, kf_id_int, between_sigmas)
-
-            if i < n_priors:
-                # self.optimizer.add_pose_prior(ref_pose, kf_id_int, NodeType.REFERENCE, prior_sigmas)
-                self.optimizer.add_pose_prior(cam_pose, kf_id_int, NodeType.CAMERA, prior_sigmas)
+            self.Trc_traj.append(Trc)
+            Twr = state.pose
+            Twc = Twr.compose(Trc)
+            ref_sigmas = state.sigmas
+            self.optimizer.add_node(Twc, i, NodeType.CAMERA)
+            self.optimizer.add_reference_anchor(self.camera.id, i, Twr, ref_sigmas)
 
             if i > 0:
-                dt_posix = current_timestep - last_timestep
-                dt = Time.TimeConversion.dt_POSIX_to_SEC(dt_posix)
-                sigmas = kinetic_sigmas * dt
-                self.optimizer.add_kinematic_factor(last_kf_id, kf_id_int, self.camera.id, NodeType.CAMERA, last_state, dt, sigmas)
+                dt_posix = timestep - last_timestep
+                dt = Time.TimeConversion.dt_POSIX_to_SECONDS(dt_posix)
+                # sigmas = vel_ext_sigmas * dt # Scale sigmas with dt
+                # self.optimizer.add_velocity_extrinsic_factor(i-1, i, self.camera.id, NodeType.CAMERA, last_state, dt, sigmas)
+                sigmas = vel_sigmas * dt
+                meas = Geometry.SE3.transform_twist(Trc, last_state.twist*dt)
+                # self.optimizer.add_velocity_factor(i-1, i, NodeType.CAMERA, meas, sigmas)
+                Twc0 = last_state.pose.compose(Trc)
+                odom = Geometry.SE3.between(Twc0, Twc)
+                # self.optimizer.add_between_factor(i-1, i, NodeType.CAMERA, odom, odom_sigmas)
 
-            for map_point in self.map_points.values():
-                observations = map_point['observations']
-                if i < iter_before_mpts: break
-                if len(observations) < 3: continue # Skip map points with few observations
-                if kf_id not in observations.keys(): continue # Map point not in frame
-                mp_id = int(map_point['id'])
-                kp = keyframe['keypoints_und'][observations[kf_id]]
-                # self.optimizer.update_projection_factor(mp_id, kp, kf_id_int, self.camera)
+            if i < n_priors:
+                self.optimizer.add_pose_prior(Twc, i, NodeType.CAMERA, prior_sigmas)
+
+            # Add reprojection of map points only for keyframes
+            is_keyframe = timestep in self.kf_map
+            if is_keyframe:
+                kf_id = self.kf_map[timestep]
+                keyframe = self.keyframes[kf_id]
+                add_optim = False
+                for map_point in self.map_points.values():
+                    observations = map_point['observations']
+                    if len(observations) < 3: continue # Skip map points with few observations
+                    if kf_id not in observations.keys(): continue # Map point not in frame
+                    mp_id = int(map_point['id'])
+                    kp = keyframe['keypoints_und'][observations[kf_id]]
+                    self.optimizer.update_projection_factor(mp_id, kp, i, self.camera)
+                    add_optim = True
+                # if add_optim: ekstra_optims += 1
             
             
             try:
-                if i >= iter_before_optim:
-                    self.optimizer.optimize() # Optimize after at least two timesteps have passed
+                self.optimizer.optimize(ekstra_optims) # Optimize after at least two timesteps have passed
             except Exception as e:
+                # print(e)
                 break
             finally:
                 print(i)
 
-            last_kf_id = kf_id_int
-            last_timestep = keyframe['timestep']
-            last_state = ref_state
+            last_timestep = timestep
+            last_state = state
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
-        ref_traj = np.empty([len(self.keyframes), 6])
-        cam_traj = np.empty([len(self.keyframes), 6])
-        for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
+        ref_traj = np.empty([len(t), 6])
+        cam_traj = np.empty([len(t), 6])
+        for i, (timestep, state) in enumerate(self.states.items()):
             # print(kf_id, Time.TimeConversion.POSIX_to_STX(keyframe['timestep']))
-            ref_state = self.states[keyframe['timestep']]
-            ref_pose = ref_state.pose
-            cam_pose = ref_pose.compose(self.Trc_gt)
-            # vec = Geometry.SE3.as_vector(ref_pose)
-            # if not np.allclose(vec[:3], ref_state.attitude*180/np.pi, rtol=1e-5):
-            #     print(f'GT: {ref_state.attitude*180/np.pi}, Trans: {vec[:3]}')
-            ref_traj[i, :] = Geometry.SE3.as_vector(ref_pose)
-            cam_traj[i, :] = Geometry.SE3.as_vector(cam_pose)
+            Twr = state.pose
+            Twc = Twr.compose(self.Trc_gt)
+            ref_traj[i, :] = Geometry.SE3.as_vector(Twr)
+            cam_traj[i, :] = Geometry.SE3.as_vector(Twc)
 
         for i in range(len(pos_axs)):
             ang_axs[i].plot(t, ref_traj[:, i], label='Ref-gt')
@@ -139,20 +138,19 @@ class Application:
 
 
     def plot_estim(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
-        ref_traj = np.empty([len(self.keyframes), 6])
-        cam_traj = np.empty([len(self.keyframes), 6])
+        ref_traj = np.empty([len(t), 6])
+        cam_traj = np.empty([len(t), 6])
         Trc_estim = self.optimizer.get_pose_node_estimate(self.camera.id, NodeType.EXTRINSIC)
-        for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
-            kf_id_int = int(kf_id)
-            ref_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.REFERENCE)
-            cam_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.CAMERA)
-            if not cam_pose:
+        for i, (timestep, state) in enumerate(self.states.items()):
+            # ref_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.REFERENCE)
+            Twc = self.optimizer.get_pose_node_estimate(i, NodeType.CAMERA)
+            if not Twc:
                 ref_traj[i, :] = np.nan
                 cam_traj[i, :] = np.nan
                 continue
-            ref_pose = cam_pose.compose(Trc_estim.inverse())
-            ref_traj[i, :] = Geometry.SE3.as_vector(ref_pose)
-            cam_traj[i, :] = Geometry.SE3.as_vector(cam_pose)
+            Twr = Twc.compose(Trc_estim.inverse())
+            ref_traj[i, :] = Geometry.SE3.as_vector(Twr)
+            cam_traj[i, :] = Geometry.SE3.as_vector(Twc)
 
         for i in range(len(pos_axs)):
             ang_axs[i].plot(t, ref_traj[:, i], label='Ref-estim')
@@ -162,12 +160,33 @@ class Application:
             pos_axs[i].plot(t, cam_traj[:, i+3], label='Cam-estim')
 
 
+    def plot_extrinsics(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
+        traj = np.empty([len(t), 6])
+        traj_gt = np.empty([len(t), 6])
+        gt = Geometry.SE3.as_vector(self.Trc_gt)
+        for i, Trc in enumerate(self.Trc_traj):
+            traj_gt[i, :] = gt
+            if not Trc:
+                traj[i, :] = np.nan
+                continue
+            traj[i, :] = Geometry.SE3.as_vector(Trc)
+
+        for i in range(len(pos_axs)):
+            ang_axs[i].plot(t, traj[:, i], label='Trc-traj')
+            ang_axs[i].plot(t, traj_gt[:, i], label='Trc-gt')
+            pos_axs[i].plot(t, traj[:, i+3], label='Trc-traj')
+            pos_axs[i].plot(t, traj_gt[:, i+3], label='Trc-gt')
+
+
     def show(self) -> None:
         fig, axs = plt.subplots(2, 3)
+        _, extr_axs = plt.subplots(2, 3)
         pos_axs, ang_axs = axs[0], axs[1]
-        t = np.arange(len(self.keyframes))
+        pos_axs_ext, ang_axs_ext = extr_axs[0], extr_axs[1]
+        t = np.arange(len(self.states))
         self.plot_gt(t, pos_axs, ang_axs)
         self.plot_estim(t, pos_axs, ang_axs)
+        self.plot_extrinsics(t, pos_axs_ext, ang_axs_ext)
 
         ang_labels = ['roll', 'pitch', 'yaw']
         pos_labels = ['x', 'y', 'z']
@@ -178,6 +197,14 @@ class Application:
             ang_axs[i].grid()
             ang_axs[i].legend()
             ang_axs[i].set_title(ang_labels[i])
+
+            pos_axs_ext[i].grid()
+            pos_axs_ext[i].legend()
+            pos_axs_ext[i].set_title(pos_labels[i])
+            ang_axs_ext[i].grid()
+            ang_axs_ext[i].legend()
+            ang_axs_ext[i].set_title(ang_labels[i])
+            
 
 
         plt.show()

@@ -45,6 +45,10 @@ class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
         if show_degrees: rot *= 180 / np.pi
         pos = pose.translation()
         return np.append(rot, pos)
+    
+    @staticmethod
+    def transform_twist(pose: 'SE3', xi: Vector6) -> Vector6:
+        return pose.inverse().AdjointMap() @ xi
 
 class SO3(gtsam.Rot3): # Abstraction of gtsam Rot3 class
     pass

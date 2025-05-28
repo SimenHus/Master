@@ -9,7 +9,7 @@ from gtsam import CustomFactor, noiseModel, Values, Pose2, Pose3, Rot3
 from gtsam.utils.numerical_derivative import numericalDerivative31, numericalDerivative32, numericalDerivative33
 from gtsam.utils.numerical_derivative import numericalDerivative21, numericalDerivative22
 
-from src.backend.factors import BetweenFactorCamera, ReferenceAnchor, KinematicCameraFactor
+from src.backend.factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor
 from src.util import Geometry
 
 noise_model = noiseModel.Isotropic.Sigma(6, 0.1)
@@ -44,7 +44,7 @@ def anchor():
     values.insert(0, T_rel)
     values.insert(1, T1.compose(T_rel))
 
-    return [np.empty((6, 6), order='F'),np.empty((6, 6), order='F')]
+    return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F')]
 
 def kinematic():
     global custom_factor
@@ -59,11 +59,22 @@ def kinematic():
     values.insert(0, Twc1)
     values.insert(1, Twc2)
     values.insert(2, T_rel)
-    custom_factor = KinematicCameraFactor(0, 1, 2, state, dt, noise_model)
+    custom_factor = VelocityExtrinsicFactor(0, 1, 2, state, dt, noise_model)
 
     return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F'), np.empty((6, 6), order='F')]
 
-H = kinematic()
+def velocity():
+    global custom_factor
+    dt = 0.5
+    xi = state.twist * dt
+    Twx1 = Pose3()
+    Twx2 = Twx1.compose(Pose3.Expmap(xi))
+    values.insert(0, Twx1)
+    values.insert(1, Twx2)
+    custom_factor = VelocityFactor(0, 1, xi, noise_model)
+    return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F')]
+
+H = velocity()
 custom_factor.evaluateError('', values, H)
 
 def f(*args):
@@ -87,5 +98,6 @@ if len(H) == 2:
 
 # Check the numerical derivatives against the analytical ones
 for i in range(len(H)):
-    print(i)
+    print(f'Testing: {i}')
     np.testing.assert_allclose(H[i], nums[i], rtol=1e-5, atol=1e-8)
+    print(f'Test {i} was a success')

@@ -8,7 +8,7 @@ from gtsam.utils.numerical_derivative import numericalDerivative21
 def f(T12, xi):
     return T12.inverse().AdjointMap() @ xi
 
-class KinematicCameraFactor(CustomFactor):
+class VelocityExtrinsicFactor(CustomFactor):
     def __init__(self, pose_from, pose_to, extrinsics_key, measurement, dt, noise_model=None):
         super().__init__(noise_model, [pose_from, pose_to, extrinsics_key], self.evaluateError)
         self.measurement = measurement
@@ -23,7 +23,6 @@ class KinematicCameraFactor(CustomFactor):
         H1 = np.zeros((6, 6), dtype=np.float64, order='F')
         H2 = np.zeros((6, 6), dtype=np.float64, order='F')
         H3 = np.zeros((6, 6), dtype=np.float64, order='F')
-        H4 = np.zeros((6, 6), dtype=np.float64, order='F')
         HLocal = np.zeros((6, 6), dtype=np.float64, order='F')
 
         xi_r1 = self.measurement.twist * dt
@@ -32,12 +31,11 @@ class KinematicCameraFactor(CustomFactor):
         J = numericalDerivative21(f, Trc, xi_r1)
 
         prediction = Pose3.between(Twc1, Twc2, H1, H2)
-        error = Pose3.localCoordinates(Pose3.Expmap(xi_c1, H4), prediction, HLocal)
+        error = Pose3.localCoordinates(Pose3.Expmap(xi_c1, H3), prediction, HLocal)
 
         if H is not None:
             H[0] = -HLocal@H1
             H[1] = -HLocal@H2
-            # H[2] = HLocal@H4@H3
-            H[2] = HLocal@H4@J
+            H[2] = HLocal@H3@J
 
         return error

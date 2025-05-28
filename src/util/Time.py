@@ -13,7 +13,7 @@ class TimeConversion:
     UTC_POSIX_FACTOR = 1e6
 
     @classmethod
-    def dt_POSIX_to_SEC(clc, dt_posix: int) -> float:
+    def dt_POSIX_to_SECONDS(clc, dt_posix: int) -> float:
         return dt_posix / clc.UTC_POSIX_FACTOR
 
     @classmethod

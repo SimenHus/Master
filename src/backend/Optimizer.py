@@ -7,23 +7,23 @@ from gtsam import DegeneracyMode, LinearizationMode
 from gtsam import BetweenFactorPose3, PriorFactorPose3
 from gtsam import NonlinearEqualityPose3
 from gtsam import noiseModel
-from gtsam.symbol_shorthand import X, T, C
-
+from gtsam.symbol_shorthand import X, T, C, V
 
 from enum import Enum
 from dataclasses import dataclass
-from .factors import BetweenFactorCamera, ReferenceAnchor, KinematicCameraFactor
+from .factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor
 from src.util import Geometry
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from src.structs import Camera, Kinematics
+    from src.structs import Camera
 
 
 class NodeType(Enum):
     CAMERA = C
     REFERENCE = X
     EXTRINSIC = T
+    VELOCITY = V
 
 class Status(Enum):
     PENDING = 0
@@ -112,24 +112,34 @@ class Optimizer:
         # self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
         self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
 
-        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 2.5) # Pixel std deviation in u and v
+        self.pixel_noise = noiseModel.Isotropic.Sigma(2, 1.5) # Pixel std deviation in u and v
 
         self.isam_parameters = ISAM2Params()
         # self.isam_parameters.setRelinearizeThreshold(0.1)
-        # self.isam_parameters.relinearizeSkip = 3
+        # self.isam_parameters.relinearizeSkip = 5
         self.isam = ISAM2(self.isam_parameters)
 
     def _add_factor(self, factor, identifier: str) -> None:
         self.factor_db.add_pending(identifier, factor) # Add factor as pending to database
 
-    def add_pose_node(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType) -> None:
-        self.new_nodes.insert(node_type.value(pose_id), value)
+    def add_node(self, value: 'Geometry', id: int, node_type: NodeType) -> None:
+        self.new_nodes.insert(node_type.value(id), value)
 
-    def add_kinematic_factor(self, pose_from: int, pose_to: int, camera_id: int, node_type: NodeType, measurement: 'Geometry.State', dt: float, sigmas: list) -> None:
+    def add_between_factor(self, pose_from: int, pose_to: int, node_type: NodeType, measurement: 'Geometry.SE3', sigmas: list) -> None:
+        noise_model = noiseModel.Diagonal.Sigmas(sigmas)
+        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
+        self._add_factor(BetweenFactorPose3(from_key, to_key, measurement, noise_model), f'Between{from_key}-{to_key}')
+
+    def add_velocity_extrinsic_factor(self, pose_from: int, pose_to: int, camera_id: int, node_type: NodeType, measurement: 'Geometry.State', dt: float, sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
         from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
         extrinsics_key = NodeType.EXTRINSIC.value(camera_id)
-        self._add_factor(KinematicCameraFactor(from_key, to_key, extrinsics_key, measurement, dt, noise_model), f'Kinematics{from_key}-{extrinsics_key}-{to_key}')
+        self._add_factor(VelocityExtrinsicFactor(from_key, to_key, extrinsics_key, measurement, dt, noise_model), f'VelocityExtrinsic{from_key}-{extrinsics_key}-{to_key}')
+
+    def add_velocity_factor(self, pose_from: int, pose_to: int, node_type: NodeType, measurement: 'Geometry.Vector6', sigmas: list) -> None:
+        noise_model = noiseModel.Diagonal.Sigmas(sigmas)
+        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
+        self._add_factor(VelocityFactor(from_key, to_key, measurement, noise_model), f'Velocity{from_key}-{to_key}')
 
     def add_pose_equality(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType) -> None:
         key = node_type.value(pose_id)

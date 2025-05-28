@@ -279,7 +279,7 @@ class Tracker:
 
 
     def need_new_keyframe(self) -> bool:
-        if Frame.next_id - self.last_keyframe_id > 1: return True
+        if Frame.next_id - self.last_keyframe_id > 5: return True
         return False
 
 
