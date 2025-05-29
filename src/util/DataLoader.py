@@ -40,6 +40,7 @@ def load_stx_data(path, n = None) -> list[STXData]:
     if n is None: n = len(list_of_jsons)
     n_files = len(list_of_jsons) if len(list_of_jsons) < n else n
 
+    ref_lla = None
     for i, json_file in enumerate(list_of_jsons[:n_files]):
         with open(json_file, 'r') as f: data_all = json.load(f)
         timestep = data_all['meas_time']
@@ -49,13 +50,14 @@ def load_stx_data(path, n = None) -> list[STXData]:
         acc = np.array(data['acceleration'])
         atterror = np.array(data['atterror'])
         poserror = np.array(data['poserror'])
-        attrate = np.array(data['attrate'])
+        attrate = np.array(data['attrate']) * np.pi / 180
         vel = np.array(data['velocity'])
         att = np.array(data['attitude']) * np.pi / 180
         lat, lon, alt = data['position']
         lla = LLA(lat, lon, alt)
-        ecef = Geode.Transformation.LLA_to_ECEF(lla)
-        state = Geometry.State(ecef, vel, acc, poserror, att, attrate, atterror)
+        if not ref_lla: ref_lla = lla
+        pos = Geode.Transformation.LLA_to_NED(lla, ref_lla)
+        state = Geometry.State(pos, vel, acc, poserror, att, attrate, atterror)
 
         result.append(STXData(state, lla, unix_timestep))
 

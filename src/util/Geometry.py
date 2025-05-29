@@ -49,6 +49,19 @@ class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
     @staticmethod
     def transform_twist(pose: 'SE3', xi: Vector6) -> Vector6:
         return pose.inverse().AdjointMap() @ xi
+    
+    @classmethod
+    def NED_to_RDF(clc, pose: 'SE3') -> 'SE3':
+        return pose.compose(clc.NED_to_RDF_map())
+    
+    @staticmethod
+    def NED_to_RDF_map() -> 'SE3':
+        rot = SO3(np.array([
+            [0, 0, 1],
+            [1, 0, 0],
+            [0, 1, 0]
+        ]))
+        return SE3(rot, [0, 0, 0])
 
 class SO3(gtsam.Rot3): # Abstraction of gtsam Rot3 class
     pass

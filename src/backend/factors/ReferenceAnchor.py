@@ -1,9 +1,13 @@
 
 from gtsam import CustomFactor
 from gtsam import Pose3
+from gtsam.utils.numerical_derivative import numericalDerivative31, numericalDerivative32
 
 import numpy as np
 
+
+def f(Trc, Twc, meas):
+    return Pose3.localCoordinates(meas, Twc.compose(Trc.inverse()))
 
 class ReferenceAnchor(CustomFactor):
     def __init__(self, rel_key: int, cam_key: int, measurement: Pose3, noise_model=None):
@@ -32,8 +36,14 @@ class ReferenceAnchor(CustomFactor):
         prediction = Twc.compose(Trc.inverse(H1), H2, H3)
         error = Pose3.localCoordinates(self.measurement, prediction, HLocal)
 
+        error = f(Trc, Twc, self.measurement)
+
         if H is not None:
-            H[0] = -HLocal@H3@H1
-            H[1] = -HLocal@H2
+            H[0] = numericalDerivative31(f, Trc, Twc, self.measurement)
+            H[1] = numericalDerivative32(f, Trc, Twc, self.measurement)
+
+        # if H is not None:
+        #     H[0] = -HLocal@H3@H1
+        #     H[1] = -HLocal@H2
 
         return error

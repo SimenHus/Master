@@ -23,4 +23,4 @@ class LLA:
 class STXData:
     state: Geometry.State
     lla: LLA
-    timestep: str
+    timestep: int

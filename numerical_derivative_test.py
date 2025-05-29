@@ -9,7 +9,7 @@ from gtsam import CustomFactor, noiseModel, Values, Pose2, Pose3, Rot3
 from gtsam.utils.numerical_derivative import numericalDerivative31, numericalDerivative32, numericalDerivative33
 from gtsam.utils.numerical_derivative import numericalDerivative21, numericalDerivative22
 
-from src.backend.factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor
+from src.backend.factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor, HandEyeFactor
 from src.util import Geometry
 
 noise_model = noiseModel.Isotropic.Sigma(6, 0.1)
@@ -19,7 +19,7 @@ state = Geometry.State(
     acceleration=np.array([0, 0, 0]),
     attrate=np.array([0.1, 0.1, 0]) * np.pi/180,
 )
-
+noise = Pose3.Expmap([0., 0.1, -0.1, 0.1, -0.1, 0.0])
 
 values = Values()
 custom_factor = None
@@ -64,17 +64,45 @@ def kinematic():
     return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F'), np.empty((6, 6), order='F')]
 
 def velocity():
-    global custom_factor
+    global custom_factor, noise
     dt = 0.5
     xi = state.twist * dt
     Twx1 = Pose3()
-    Twx2 = Twx1.compose(Pose3.Expmap(xi))
+    Twx2 = Twx1.compose(Pose3.Expmap(xi)).compose(noise)
     values.insert(0, Twx1)
     values.insert(1, Twx2)
     custom_factor = VelocityFactor(0, 1, xi, noise_model)
     return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F')]
 
-H = velocity()
+
+def ha_calib():
+    global custom_factor, noise
+
+    Trc = T_rel
+
+    # Tr1r2
+    odom_r = Pose3(Rot3.RzRyRx(np.array([0, 0, 30])*np.pi/180), np.array([-3, 0, 0]))
+    odom_c = Trc.inverse().compose(odom_r).compose(Trc)
+
+    Tr1 = Pose3()
+    Tc1 = Tr1.compose(Trc)
+    Tr2 = Tr1.compose(odom_r)
+    Tc2 = Tr2.compose(Trc).compose(noise)
+
+    v1 = Geometry.SE3.as_vector(Tr1, show_degrees=False)
+    v2 = Geometry.SE3.as_vector(Tr2, show_degrees=False)
+    s1 = Geometry.State(position=v1[3:], attitude=v1[:3])
+    s2 = Geometry.State(position=v2[3:], attitude=v2[:3])
+
+
+    values.insert(0, Tc1)
+    values.insert(1, Tc2)
+    values.insert(2, T_rel)
+
+    custom_factor = HandEyeFactor(0, 1, 2, s1, s2, noise_model)
+    return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F'), np.empty((6, 6), order='F')]
+
+H = anchor()
 custom_factor.evaluateError('', values, H)
 
 def f(*args):

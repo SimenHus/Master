@@ -15,7 +15,7 @@ from gtsam import triangulatePoint3
 import cv2
 from enum import Enum
 from dataclasses import dataclass
-from .factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor
+from .factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor, HandEyeFactor
 from src.util import Geometry
 from typing import TYPE_CHECKING
 
@@ -114,7 +114,7 @@ class Optimizer:
         self.new_nodes = Values()
 
         self.smart_params = SmartProjectionParams()
-        # self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
+        self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
         self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
 
         self.smart_pixel_noise = noiseModel.Isotropic.Sigma(2, 1.5) # Pixel std deviation in u and v
@@ -124,8 +124,8 @@ class Optimizer:
         )
 
         self.isam_parameters = ISAM2Params()
-        # self.isam_parameters.setRelinearizeThreshold(0.1)
-        # self.isam_parameters.relinearizeSkip = 3
+        self.isam_parameters.setRelinearizeThreshold(0.1)
+        self.isam_parameters.relinearizeSkip = 1
         self.isam = ISAM2(self.isam_parameters)
 
     def _add_factor(self, factor, identifier: str) -> None:
@@ -167,13 +167,19 @@ class Optimizer:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
         self._add_factor(ReferenceAnchor(T(camera_id), C(camera_pose_id), ref_pose, noise_model), f'RefAnchor{camera_id}-{camera_pose_id}')
 
-    def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Twc = Geometry.SE3()) -> None:
+    def add_hand_eye_factor(self, pose_from: int, pose_to: int, camera_id: int, state_from: Geometry.State, state_to: Geometry.State, node_type: NodeType, sigmas: list) -> None:
+        noise_model = noiseModel.Diagonal.Sigmas(sigmas)
+        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
+        extr_key = NodeType.EXTRINSIC.value(camera_id)
+        self._add_factor(HandEyeFactor(from_key, to_key, extr_key, state_from, state_to, noise_model), f'HandEye{from_key}-{to_key}-{extr_key}')
+
+    def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Twc = None) -> None:
+        if Twc is None: Twc = Geometry.SE3.NED_to_RDF_map()
         identifier = f'MapPoint{map_point_id}'
         self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
 
         observations = self.factor_db.observations(identifier) # Get observations from factor DB
-        if len(observations) < 2: return # Need 2 or more observations before adding to FG
-        
+        # if len(observations) < 2: return # Need x or more observations before adding to FG
         K = Cal3_S2(camera.parameters_with_skew)
 
         # if not self.get_node_estimate(map_point_id, NodeType.LANDMARK):
