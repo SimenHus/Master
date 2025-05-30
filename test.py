@@ -13,17 +13,18 @@ data0, data1 = stx_data[:2]
 
 
 Twr0 = data0.state.pose
-Twc0 = Twr0.compose(Trc)
-Twcc = Geometry.SE3.NED_to_RDF(Twc0)
+Twr1 = data1.state.pose
+dt = Time.TimeConversion.dt_POSIX_to_SECONDS(data1.timestep - data0.timestep)
+twist0 = data0.state.twist
+
+Twr1_guess = Geometry.SE3.Expmap(twist0).compose(Twr0)
+Twr1_guess = Twr0.compose(Geometry.SE3.Expmap(twist0))
 
 vec1 = Geometry.SE3.as_vector(Twr0)
-vec2 = Geometry.SE3.as_vector(Twc0)
-vec3 = Geometry.SE3.as_vector(Twcc)
+vec2 = Geometry.SE3.as_vector(Twr1)
+vec3 = Geometry.SE3.as_vector(Twr1_guess)
 
-print(f'Ref: {vec1}')
-print(f'Cam NED: {vec2}')
-print(f'Cam RDF: {vec3}')
-
-
-# print(Geometry.SO3.RzRyRx(np.array([90, 0, 90])*np.pi/180))
-# print(Geometry.SE3.NED_to_RDF_map())
+print(f'Twr0: {vec1}')
+print(f'Twr1 GT: {vec2}')
+print(f'Trw1 Guess: {vec3}')
+print(f'Error: {vec3 - vec2}')

@@ -34,7 +34,7 @@ class Application:
         stx_data = DataLoader.load_stx_data(path)
         keyframe_timesteps = [kf['timestep'] for kf in self.keyframes.values()]
 
-        filtered_data = [data for data in stx_data if data.timestep in keyframe_timesteps]
+        # filtered_data = [data for data in stx_data if data.timestep in keyframe_timesteps]
         filtered_data = stx_data
 
         sorted_data = sorted(filtered_data, key=lambda x: x.timestep)
@@ -47,27 +47,29 @@ class Application:
 
     def start(self):
         n_priors = 2
-        anchor_intervals = 1
+        anchor_intervals = 3
+        HA_interval = 3
 
-        vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e0
+        vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.1]) * 1e-1
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
-        extrinsic_prior_sigmas = np.append([1e-3]*3, [1e-3]*3)
+        extrinsic_prior_sigmas = np.append([1e-2]*3, [1e-3]*3)
         HA_sigmas = np.array([0.1, 0.1, 0.1, 0.03, 0.03, 0.03]) * 1e0
 
-        noisy_vals = np.append([-0.1, 0.2, -0.4], [0.1, -0.1, 0.1])
+        noisy_vals = np.append([-1, 2, -4], [0.1, -0.1, 0.1])
         Trc_init = Geometry.SE3.as_vector(self.Trc_gt) + noisy_vals
         Trc_init = Geometry.SE3.from_vector(Trc_init, radians=False)
 
         self.optimizer.add_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
         self.optimizer.add_pose_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, extrinsic_prior_sigmas)
+
         self.Trc_traj: list[Geometry.SE3] = []
         last_timestep = None
         last_state = None
-        last_kf_timestep = None
-        last_kf_i = None
+        last_HA_i = None
+        last_HA_timestep = None
         for i, (timestep, state) in enumerate(self.states.items()):
             is_keyframe = timestep in self.kf_map
-            extra_optims = 0
+            extra_optims = 1
             # PERFORM POSE / VELOCITY SLAM ON ALL FRAMES
             Trc = self.optimizer.get_node_estimate(self.camera.id, NodeType.EXTRINSIC)
             if Trc is None: Trc = Trc_init
@@ -78,7 +80,7 @@ class Application:
             ref_sigmas = state.sigmas
             self.optimizer.add_node(Twc, i, NodeType.CAMERA)
 
-            if i % anchor_intervals == 0:
+            if i % anchor_intervals == 0 and anchor_intervals > 0:
                 self.optimizer.add_reference_anchor(self.camera.id, i, Twr, ref_sigmas)
 
             if i > 0:
@@ -86,12 +88,19 @@ class Application:
                 dt = Time.TimeConversion.dt_POSIX_to_SECONDS(dt_posix)
                 sigmas = vel_sigmas * dt
                 twist = (state.twist + last_state.twist)/2 * dt
-                meas = Geometry.SE3.transform_twist(Twr.inverse(), twist)
+                meas = twist
                 self.optimizer.add_velocity_factor(i-1, i, NodeType.CAMERA, meas, sigmas)
 
             if i < n_priors or n_priors < 0:
                 prior_value = Twr.compose(Trc_init)
                 self.optimizer.add_pose_prior(prior_value, i, NodeType.CAMERA, prior_sigmas)
+
+            if i % HA_interval == 0 and HA_interval > 0:
+                if not last_HA_i:
+                    last_HA_i = i
+                    last_HA_timestep = timestep
+                state_from = self.states[last_HA_timestep]
+                self.optimizer.add_hand_eye_factor(last_HA_i, i, self.camera.id, state_from, state, NodeType.CAMERA, HA_sigmas)
 
             # Add reprojection of map points only for keyframes
             if is_keyframe:
@@ -106,12 +115,7 @@ class Application:
                     kp = keyframe['keypoints_und'][observations[kf_id]]
                     self.optimizer.update_projection_factor(mp_id, kp, i, self.camera)
                     add_optim = True
-                if add_optim: extra_optims += 2
-                if last_kf_timestep:
-                    state_from = self.states[last_kf_timestep]
-                    self.optimizer.add_hand_eye_factor(last_kf_i, i, self.camera.id, state_from, state, NodeType.CAMERA, HA_sigmas)
-                last_kf_timestep = timestep
-                last_kf_i = i
+                # if add_optim: extra_optims += 1
             
             
             try:

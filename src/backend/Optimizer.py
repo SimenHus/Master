@@ -118,14 +118,10 @@ class Optimizer:
         self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
 
         self.smart_pixel_noise = noiseModel.Isotropic.Sigma(2, 1.5) # Pixel std deviation in u and v
-        self.generic_pixel_noise = noiseModel.Robust.Create(
-            noiseModel.mEstimator.Huber(1.345),
-            self.smart_pixel_noise
-        )
 
         self.isam_parameters = ISAM2Params()
         self.isam_parameters.setRelinearizeThreshold(0.1)
-        self.isam_parameters.relinearizeSkip = 1
+        self.isam_parameters.relinearizeSkip = 3
         self.isam = ISAM2(self.isam_parameters)
 
     def _add_factor(self, factor, identifier: str) -> None:
@@ -173,27 +169,17 @@ class Optimizer:
         extr_key = NodeType.EXTRINSIC.value(camera_id)
         self._add_factor(HandEyeFactor(from_key, to_key, extr_key, state_from, state_to, noise_model), f'HandEye{from_key}-{to_key}-{extr_key}')
 
-    def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Twc = None) -> None:
-        if Twc is None: Twc = Geometry.SE3.NED_to_RDF_map()
+    def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
+        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
+        # Trc = Geometry.SE3()
         identifier = f'MapPoint{map_point_id}'
         self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
 
         observations = self.factor_db.observations(identifier) # Get observations from factor DB
-        # if len(observations) < 2: return # Need x or more observations before adding to FG
+        if len(observations) < 3: return # Need x or more observations before adding to FG
         K = Cal3_S2(camera.parameters_with_skew)
 
-        # if not self.get_node_estimate(map_point_id, NodeType.LANDMARK):
-        #     pose_from = self.get_node_estimate(observations[0][1], NodeType.CAMERA)
-        #     pose_to = self.get_node_estimate(pose_id, NodeType.CAMERA)
-        #     if pose_from and pose_to:
-        #         # landmark_init = triangulatePoint3(K, pose_from, observations[0][0], pose_to, pixels)
-        #         landmark_init = triangulatePoint3([pose_from, pose_to], K, [observations[0][0], pixels], rank_tol=1e-9, optimize=True)
-        #         self.add_node(landmark_init, map_point_id, NodeType.LANDMARK)
-
-
-        # factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K)
-
-        factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Twc, self.smart_params)
+        factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Trc, self.smart_params)
         for (kp, pose_id) in observations: factor.add(kp, C(pose_id)) # Add all observations to the factor
         
         # If factor already exists, remove/mark for removal
