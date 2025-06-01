@@ -47,12 +47,13 @@ class Application:
 
     def start(self):
         n_priors = 2
-        anchor_intervals = 3
-        HA_interval = 3
+        anchor_intervals = -1
+        HA_interval = -1
 
         vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.1]) * 1e-1
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
         extrinsic_prior_sigmas = np.append([1e-2]*3, [1e-3]*3)
+        between_sigma = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
         HA_sigmas = np.array([0.1, 0.1, 0.1, 0.03, 0.03, 0.03]) * 1e0
 
         noisy_vals = np.append([-1, 2, -4], [0.1, -0.1, 0.1])
@@ -84,12 +85,9 @@ class Application:
                 self.optimizer.add_reference_anchor(self.camera.id, i, Twr, ref_sigmas)
 
             if i > 0:
-                dt_posix = timestep - last_timestep
-                dt = Time.TimeConversion.dt_POSIX_to_SECONDS(dt_posix)
-                sigmas = vel_sigmas * dt
-                twist = (state.twist + last_state.twist)/2 * dt
-                meas = twist
-                self.optimizer.add_velocity_factor(i-1, i, NodeType.CAMERA, meas, sigmas)
+                odom_r = Geometry.SE3.between(last_state.pose, state.pose)
+                odom_c = Trc_init.inverse() * odom_r * Trc_init
+                self.optimizer.add_between_factor(i-1, i, NodeType.CAMERA, odom_c, between_sigma)
 
             if i < n_priors or n_priors < 0:
                 prior_value = Twr.compose(Trc_init)

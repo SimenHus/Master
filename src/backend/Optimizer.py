@@ -120,8 +120,8 @@ class Optimizer:
         self.smart_pixel_noise = noiseModel.Isotropic.Sigma(2, 1.5) # Pixel std deviation in u and v
 
         self.isam_parameters = ISAM2Params()
-        self.isam_parameters.setRelinearizeThreshold(0.1)
-        self.isam_parameters.relinearizeSkip = 3
+        # self.isam_parameters.setRelinearizeThreshold(0.1)
+        # self.isam_parameters.relinearizeSkip = 3
         self.isam = ISAM2(self.isam_parameters)
 
     def _add_factor(self, factor, identifier: str) -> None:
