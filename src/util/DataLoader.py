@@ -7,18 +7,20 @@ import json
 import numpy as np
 
 
-
-def load_stx_images(path, mask_path = None, n = None) -> list[ImageData]:
+def load_stx_images() -> list[ImageData]:
+    img_path = data_path()
     suffix = 'jpg'
-    images = path + f'/*.{suffix}'
+    images = img_path + f'/*.{suffix}'
 
     list_of_images = glob.glob(images)
+    mask_path = config()['dir']['static_mask_path']
     if mask_path is None:
         mask = np.ones_like(cv2.imread(list_of_images[0], cv2.IMREAD_GRAYSCALE), dtype=np.uint8) * 255
     else:
-        mask = cv2.imread(f'{mask_path}/static_mask.png', cv2.IMREAD_GRAYSCALE)
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
 
     result = []
+    n = config()['imgs_to_use']
     if n is None: n = len(list_of_images)
     n_files = len(list_of_images) if len(list_of_images) < n else n
     for i, image_file in enumerate(list_of_images[:n_files]):
@@ -31,18 +33,17 @@ def load_stx_images(path, mask_path = None, n = None) -> list[ImageData]:
 
     return sorted(result, key=lambda x: x.timestep)
 
-
-def load_stx_data(path, n = None) -> list[STXData]:
-    jsons = path + f'/*.json'
-    list_of_jsons = glob.glob(jsons)
-
+def load_stx_data() -> list[STXData]:
+    json_path = f'{data_path()}/*.json'
+    list_of_jsons = glob.glob(json_path)
+    n = config()['imgs_to_use']
     if n is None: n = len(list_of_jsons)
     n_files = len(list_of_jsons) if len(list_of_jsons) < n else n
 
     result = []
     ref_lla = None
     for i, json_file in enumerate(list_of_jsons[:n_files]):
-        with open(json_file, 'r') as f: data_all = json.load(f)
+        data_all = load_json(json_file)
         timestep = data_all['meas_time']
         data = data_all['own_vessel']
         unix_timestep = Time.TimeConversion.generic_to_POSIX(timestep)
@@ -70,10 +71,8 @@ def load_stx_data(path, n = None) -> list[STXData]:
 
     return sorted_list
 
-
-def load_stx_camera(path, cam=1, lens=0) -> list[Camera, Geometry.SE3]:
-    dataloader = path + '/dataloader.json'
-    with open(dataloader, 'r') as f: data = json.load(f)
+def load_stx_camera(cam=1, lens=0) -> list[Camera, Geometry.SE3]:
+    data = dataloader()
     lens_info = data[f'Cam{cam}'][f'Lens{lens}']
     K_list = lens_info['camera_matrix']
     pos = np.array(lens_info['location'])
@@ -83,3 +82,16 @@ def load_stx_camera(path, cam=1, lens=0) -> list[Camera, Geometry.SE3]:
     vals = np.append(att, pos)
     pose = Geometry.SE3.from_vector(vals, radians=False)
     return Camera(params, dist_coeffs), pose
+
+def config() -> dict:
+    return load_json('./config/Config.json')
+
+def dataloader() -> dict:
+    file_path = f'{config()["dir"]["dataloader"]}/dataloader.json'
+    return load_json(file_path)
+
+def data_path() -> str:
+    return f'{config()["dir"]["data"]}'
+
+def load_json(path) -> dict:
+    with open(path, 'r') as f: return json.load(f)

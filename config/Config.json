@@ -1,5 +1,9 @@
 {
     "dir": {
-        "output": "./Output/"
-    }
+        "output": "./output/",
+        "dataloader": "/mnt/c/Users/shustad/Desktop/Skole/Prosjektoppgave/data/osl",
+        "data": "/mnt/c/Users/shustad/Desktop/Skole/Prosjektoppgave/data/osl/2024-02-08/2024-02-08-14/Cam1/Lens0",
+        "static_mask_path": "./output/static_mask.png"
+    },
+    "imgs_to_use": 500
 }

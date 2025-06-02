@@ -27,17 +27,12 @@ class Camera:
             [0, self.parameters[1], self.parameters[3]],
             [0, 0, 1]
         ])
-
-    def reconstruct_with_two_views(self, kps1: list[cv2.KeyPoint], kps2: list[cv2.KeyPoint], matches12: list[cv2.DMatch]) -> tuple[bool, Geometry.SE3, list[Geometry.Point3], list[bool]]:
-        """Function to reconstruct two view geometry"""
-        # Define lists of matching points from the two images
-        im1_kps = np.array([kps1[match.queryIdx].pt for match in matches12])
-        im2_kps = np.array([kps2[match.trainIdx].pt for match in matches12])
-        
+    
+    def reconstruct_with_sorted_pixel_lists(self, kps1: list[tuple], kps2: list[tuple]) -> tuple[bool, Geometry.SE3, list[Geometry.Point3, list[bool]]]:
         dist_thresh = 1.
-        E, mask = cv2.findEssentialMat(im1_kps, im2_kps, self.K, cv2.RANSAC, 0.999, 1.0) # Get essential matrix using same points in the two images
+        E, mask = cv2.findEssentialMat(kps1, kps2, self.K, cv2.RANSAC, 0.999, 1.0) # Get essential matrix using same points in the two images
         if E is None: return False, None, None, None
-        retval, R, t, mask, triangulated_points = cv2.recoverPose(E, im1_kps, im2_kps, self.K, dist_thresh, triangulatedPoints=None, mask=mask) # Recover pose from the two images using the calculated essential matrix
+        retval, R, t, mask, triangulated_points = cv2.recoverPose(E, kps1, kps2, self.K, dist_thresh, triangulatedPoints=None, mask=mask) # Recover pose from the two images using the calculated essential matrix
 
         mask = mask.ravel().astype(bool)
         triangulated_points = np.divide(triangulated_points[:3, :], triangulated_points[3, :]) # Dehomogenize points
@@ -48,6 +43,14 @@ class Camera:
         T21 = Geometry.SE3(R, t)
 
         return True, T21, triangulated_points, mask
+
+    def reconstruct_with_two_views(self, kps1: list[cv2.KeyPoint], kps2: list[cv2.KeyPoint], matches12: list[cv2.DMatch]) -> tuple[bool, Geometry.SE3, list[Geometry.Point3], list[bool]]:
+        """Function to reconstruct two view geometry"""
+        # Define lists of matching points from the two images
+        im1_kps = np.array([kps1[match.queryIdx].pt for match in matches12])
+        im2_kps = np.array([kps2[match.trainIdx].pt for match in matches12])
+
+        return self.reconstruct_with_sorted_pixel_lists(im1_kps, im2_kps)
     
     @staticmethod
     def K_list_to_params(K: list) -> list:

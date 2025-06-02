@@ -18,7 +18,7 @@ class Application:
         self.load_keyframes('./output/KeyFrames.json')
         self.load_gt('./datasets/osl/data')
 
-        self.camera, self.Trc_gt = DataLoader.load_stx_camera('./datasets/osl')
+        self.camera, self.Trc_gt = DataLoader.load_stx_camera()
 
     def load_map_points(self, path):
         with open(path, 'r') as f: self.map_points = json.load(f)
@@ -31,7 +31,7 @@ class Application:
 
 
     def load_gt(self, path):
-        stx_data = DataLoader.load_stx_data(path)
+        stx_data = DataLoader.load_stx_data()
         keyframe_timesteps = [kf['timestep'] for kf in self.keyframes.values()]
 
         # filtered_data = [data for data in stx_data if data.timestep in keyframe_timesteps]
@@ -197,7 +197,7 @@ class Application:
         self.plot_extrinsics(t, pos_axs_ext, ang_axs_ext)
 
         ang_labels = ['roll', 'pitch', 'yaw']
-        pos_labels = ['x', 'y', 'z']
+        pos_labels = ['North [m]', 'East [m]', 'Height [m]']
         for i in range(3):
             pos_axs[i].grid()
             pos_axs[i].legend()
@@ -228,8 +228,5 @@ if __name__ == '__main__':
     graph, estimate = app.optimizer.get_visualization_variables()
     # Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
 
-
-    for identifier, observations in app.optimizer.factor_db.map_point_observations.items():
-        print(f'{identifier}: {len(observations)}')
     app.show()
     
