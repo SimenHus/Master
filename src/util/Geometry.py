@@ -56,12 +56,11 @@ class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
     
     @staticmethod
     def NED_to_RDF_map() -> 'SE3':
-        # rot = SO3(np.array([
-        #     [0, 0, 1],
-        #     [1, 0, 0],
-        #     [0, 1, 0]
-        # ]))
-        rot = SO3.RzRyRx(np.array([90, 0, 90])*np.pi / 180)
+        rot = SO3(np.array([
+            [0, 0, 1],
+            [1, 0, 0],
+            [0, 1, 0]
+        ]))
         return SE3(rot, [0, 0, 0])
 
 class SO3(gtsam.Rot3): # Abstraction of gtsam Rot3 class

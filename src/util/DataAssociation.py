@@ -25,7 +25,7 @@ class Matcher:
     THRESH_LOW: int = 5
     THRESH_HIGH: int = 50
     THRESH_SPATIAL = 0.1
-    KNN_RATIO = 0.75
+    KNN_RATIO = 0.6
 
     def search_for_initialization(self, frame1: 'Frame', frame2: 'Frame') -> list[cv2.DMatch]:
         matches = self.match(frame1.descriptors, frame2.descriptors)

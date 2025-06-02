@@ -56,7 +56,7 @@ class Application:
         between_sigma = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
         HA_sigmas = np.array([0.1, 0.1, 0.1, 0.03, 0.03, 0.03]) * 1e0
 
-        noisy_vals = np.append([-1, 2, -4], [0.1, -0.1, 0.1])
+        noisy_vals = np.append([-1, 2, -4], [0.1, -0.1, 0.1]) * 0
         Trc_init = Geometry.SE3.as_vector(self.Trc_gt) + noisy_vals
         Trc_init = Geometry.SE3.from_vector(Trc_init, radians=False)
 
@@ -107,7 +107,7 @@ class Application:
                 add_optim = False
                 for map_point in self.map_points.values():
                     observations = map_point['observations']
-                    if len(observations) < 3: continue # Skip map points with few observations
+                    if len(observations) < 24: continue # Skip map points with few observations
                     if kf_id not in observations.keys(): continue # Map point not in frame
                     mp_id = int(map_point['id'])
                     kp = keyframe['keypoints_und'][observations[kf_id]]
@@ -226,6 +226,10 @@ if __name__ == '__main__':
     print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
     print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
     graph, estimate = app.optimizer.get_visualization_variables()
-    Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
+    # Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
+
+
+    for identifier, observations in app.optimizer.factor_db.map_point_observations.items():
+        print(f'{identifier}: {len(observations)}')
     app.show()
     

@@ -176,8 +176,8 @@ class Optimizer:
         self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
 
         observations = self.factor_db.observations(identifier) # Get observations from factor DB
-        if len(observations) < 3: return # Need x or more observations before adding to FG
-        K = Cal3_S2(camera.parameters_with_skew)
+        # if len(observations) < 3: return # Need x or more observations before adding to FG
+        K = Cal3_S2(*camera.parameters_with_skew)
 
         factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Trc, self.smart_params)
         for (kp, pose_id) in observations: factor.add(kp, C(pose_id)) # Add all observations to the factor
