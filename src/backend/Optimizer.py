@@ -2,8 +2,8 @@
 from gtsam import ISAM2Params, ISAM2, LevenbergMarquardtOptimizer
 from gtsam import NonlinearFactorGraph, Values, Symbol, NonlinearFactor
 from gtsam import SmartProjectionParams
-# from gtsam import SmartProjectionPoseFactorCal3_S2
-from gtsam import SmartProjectionPose3Factor
+from gtsam import SmartProjectionPoseFactorCal3_S2
+# from gtsam import SmartProjectionPose3Factor
 from gtsam import GenericProjectionFactorCal3_S2
 from gtsam import Cal3_S2
 from gtsam import DegeneracyMode, LinearizationMode
@@ -79,9 +79,14 @@ class FactorDatabase:
 
         return fg, self.removal_indeces
     
-    def add_map_point_observation(self, identifier: str, pixels: tuple, pose_id: int) -> None:
+    def add_map_point_observation(self, identifier: str, pixels: tuple, pose_id: int) -> bool:
         if identifier not in self.map_point_observations: self.map_point_observations[identifier] = []
-        self.map_point_observations[identifier].append([pixels, pose_id])
+        
+        for obs in self.map_point_observations[identifier]:
+            if obs[1] == pose_id: return False # Specific observation already added
+
+        self.map_point_observations[identifier].append((pixels, pose_id))
+        return True
 
     def remove(self, identifier: str) -> None:
         fac = self[identifier]
@@ -177,15 +182,16 @@ class Optimizer:
 
     def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera') -> None:
         identifier = f'MapPoint{map_point_id}'
-        self.factor_db.add_map_point_observation(identifier, pixels, pose_id)
+        new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id)
+        if not new_observation: return
 
         observations = self.factor_db.observations(identifier)
-        if len(observations) < 3: return # Need x or more observations before adding to FG
-
+        if len(observations) < 5: return # Need x or more observations before adding to FG
         Tc_gtsam_c = Geometry.SE3.NED_to_RDF_map()
 
         K = Cal3_S2(*camera.parameters_with_skew)
-        if identifier in self.factor_db or True: # Landmark has previously been added to 
+
+        if identifier in self.factor_db:
             factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Tc_gtsam_c)
             self._add_factor(factor, identifier)
         else:
@@ -193,18 +199,20 @@ class Optimizer:
                 factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Tc_gtsam_c)
                 self._add_factor(factor, identifier)
 
+
     def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
         if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
         # Trc = Geometry.SE3()
         identifier = f'MapPoint{map_point_id}'
-        self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
+        new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
+        if not new_observation: return
 
         observations = self.factor_db.observations(identifier) # Get observations from factor DB
         # if len(observations) < 3: return # Need x or more observations before adding to FG
         K = Cal3_S2(*camera.parameters_with_skew)
 
-        # factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Trc, self.smart_params)
-        factor = SmartProjectionPose3Factor(self.smart_pixel_noise, K, Trc, self.smart_params)
+        factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Trc, self.smart_params)
+        # factor = SmartProjectionPose3Factor(self.smart_pixel_noise, K, Trc, self.smart_params)
         for (kp, pose_id) in observations: factor.add(kp, C(pose_id)) # Add all observations to the factor
         
         # If factor already exists, remove/mark for removal

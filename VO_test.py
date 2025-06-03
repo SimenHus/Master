@@ -47,16 +47,9 @@ class Application:
 
     def start(self):
         priors = [Geometry.SE3()]
-        anchor_intervals = -1
-        HA_interval = -1
 
-        vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.1]) * 1e-1
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
-        extrinsic_prior_sigmas = np.append([1e-2]*3, [1e-3]*3)
-        between_sigma = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
-        HA_sigmas = np.array([0.1, 0.1, 0.1, 0.03, 0.03, 0.03]) * 1e0
 
-        self.Trc_traj: list[Geometry.SE3] = []
         last_map_points_kf_id = None
         last_map_points = {}
         for i, (kf_id, keyframe) in enumerate(self.keyframes.items()):
@@ -68,7 +61,7 @@ class Application:
                 observations = map_point['observations']
                 if kf_id not in observations.keys(): continue # Map point not in frame
                 mp_id = int(map_point['id'])
-                kp = keyframe['keypoints_und'][observations[kf_id]]
+                kp = keyframe['keypoints_normed'][observations[kf_id]]
                 current_map_points[mp_id] = kp
 
             if last_map_points_kf_id is None:
@@ -84,19 +77,22 @@ class Application:
             for mp_id in current_map_points.keys():
                 if mp_id in last_map_points:
                     mp_ids.append(mp_id)
-                    mp1.append(current_map_points[mp_id])
-                    mp2.append(last_map_points[mp_id])
+                    mp1.append(last_map_points[mp_id])
+                    mp2.append(current_map_points[mp_id])
             success, Tc1c2, triangulated_points, mask = self.camera.reconstruct_with_sorted_pixel_lists(np.array(mp1), np.array(mp2))
             if not success: continue
             
             Twc2 = self.optimizer.get_node_estimate(last_map_points_kf_id, NodeType.CAMERA).compose(Tc1c2)
             self.optimizer.add_node(Twc2, kf_id_int, NodeType.CAMERA)
             for j in range(len(mp1)):
-                if mask[j]: continue
-                self.optimizer.add_projection_factor(mp_ids[j], mp1[j], kf_id_int, self.camera)
-                self.optimizer.add_projection_factor(mp_ids[j], mp2[j], last_map_points_kf_id, self.camera)
+                if not mask[j]: continue
+                point = triangulated_points[j]
+                mp1_und = self.camera.normed_to_pixels(mp1[j])
+                mp2_und = self.camera.normed_to_pixels(mp2[j])
+                self.optimizer.add_projection_factor(mp_ids[j], mp1_und, last_map_points_kf_id, self.camera)
+                self.optimizer.add_projection_factor(mp_ids[j], mp2_und, kf_id_int, self.camera)
                 if self.optimizer.get_node_estimate(mp_ids[j], NodeType.LANDMARK) is None:
-                    self.optimizer.add_node(triangulated_points[j], mp_ids[j], NodeType.LANDMARK)
+                    self.optimizer.add_node(point, mp_ids[j], NodeType.LANDMARK)
 
             try:
                 self.optimizer.optimize(extra_optims) # Optimize after at least two timesteps have passed
