@@ -47,16 +47,16 @@ class Application:
 
     def start(self):
         n_priors = 2
-        anchor_intervals = -1
+        anchor_intervals = 5
         HA_interval = -1
+        use_mps = True
 
-        vel_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.1]) * 1e-1
         prior_sigmas = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
-        extrinsic_prior_sigmas = np.append([1e-2]*3, [1e-3]*3)
-        between_sigma = np.array([0.1, 0.1, 0.1, 0.3, 0.3, 0.3]) * 1e-2
+        extrinsic_prior_sigmas = np.append([1e-1]*3, [1e-1]*3)
+        between_sigma = np.array([0.1, 0.1, 0.1, 0.03, 0.03, 0.03]) * 1e-2
         HA_sigmas = np.array([0.1, 0.1, 0.1, 0.03, 0.03, 0.03]) * 1e0
 
-        noisy_vals = np.append([-1, 2, -4], [0.1, -0.1, 0.1]) * 0
+        noisy_vals = np.append([-1, 2, -4], [0.1, -0.1, 0.1]) * 1
         Trc_init = Geometry.SE3.as_vector(self.Trc_gt) + noisy_vals
         Trc_init = Geometry.SE3.from_vector(Trc_init, radians=False)
 
@@ -101,17 +101,17 @@ class Application:
                 self.optimizer.add_hand_eye_factor(last_HA_i, i, self.camera.id, state_from, state, NodeType.CAMERA, HA_sigmas)
 
             # Add reprojection of map points only for keyframes
-            if is_keyframe:
+            if is_keyframe and use_mps:
                 kf_id = self.kf_map[timestep]
                 keyframe = self.keyframes[kf_id]
                 add_optim = False
                 for map_point in self.map_points.values():
                     observations = map_point['observations']
-                    if len(observations) < 30: continue # Skip map points with few observations
+                    if len(observations) < 3: continue # Skip map points with few observations
                     if kf_id not in observations.keys(): continue # Map point not in frame
                     mp_id = int(map_point['id'])
                     kp = keyframe['keypoints_und'][observations[kf_id]]
-                    self.optimizer.update_projection_factor(mp_id, kp, i, self.camera)
+                    self.optimizer.add_smart_projection_factor(mp_id, kp, i, self.camera)
                     add_optim = True
                 # if add_optim: extra_optims += 1
             
@@ -226,7 +226,6 @@ if __name__ == '__main__':
     print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
     print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
     graph, estimate = app.optimizer.get_visualization_variables()
-    Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
+    # Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate)
 
     app.show()
-    

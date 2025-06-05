@@ -98,6 +98,7 @@ class FactorDatabase:
         self.removal_indeces.clear()
 
     def observations(self, identifier: str) -> list[tuple, int]:
+        if identifier not in self.map_point_observations: return []
         return self.map_point_observations[identifier]
     
     def size(self) -> int:
@@ -107,7 +108,7 @@ class FactorDatabase:
         """Check if supplied map point / id exists in database"""
         return identifier in self.db
 
-    def __getitem__(self, identifier: str):
+    def __getitem__(self, identifier: str) -> Factor:
         return [x for x in self.db if x == identifier][0] # Get factor from set
     
     def __len__(self) -> int:
@@ -180,37 +181,37 @@ class Optimizer:
         extr_key = NodeType.EXTRINSIC.value(camera_id)
         self._add_factor(HandEyeFactor(from_key, to_key, extr_key, state_from, state_to, noise_model), f'HandEye{from_key}-{to_key}-{extr_key}')
 
-    def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera') -> None:
+    def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
         identifier = f'MapPoint{map_point_id}'
         new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id)
         if not new_observation: return
 
         observations = self.factor_db.observations(identifier)
         if len(observations) < 5: return # Need x or more observations before adding to FG
-        Tc_gtsam_c = Geometry.SE3.NED_to_RDF_map()
+        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
 
         K = Cal3_S2(*camera.parameters_with_skew)
 
         if identifier in self.factor_db:
-            factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Tc_gtsam_c)
+            factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Trc)
             self._add_factor(factor, identifier)
         else:
             for (pixels, pose_id) in observations:
-                factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Tc_gtsam_c)
+                factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Trc)
                 self._add_factor(factor, identifier)
 
 
-    def update_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
-        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
-        # Trc = Geometry.SE3()
+    def add_smart_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
         identifier = f'MapPoint{map_point_id}'
-        new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
-        if not new_observation: return
+
+        if len(self.factor_db.observations(identifier)) > 50: return
+        is_new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
+        if not is_new_observation: return
 
         observations = self.factor_db.observations(identifier) # Get observations from factor DB
-        # if len(observations) < 3: return # Need x or more observations before adding to FG
-        K = Cal3_S2(*camera.parameters_with_skew)
+        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
 
+        K = Cal3_S2(*camera.parameters_with_skew)
         factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Trc, self.smart_params)
         # factor = SmartProjectionPose3Factor(self.smart_pixel_noise, K, Trc, self.smart_params)
         for (kp, pose_id) in observations: factor.add(kp, C(pose_id)) # Add all observations to the factor

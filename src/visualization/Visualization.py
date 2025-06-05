@@ -14,7 +14,7 @@ import mpl_toolkits.mplot3d.art3d as art3d
 class FactorGraphVisualization:
 
     @staticmethod
-    def format_to_graphviz(graph: NonlinearFactorGraph, values: Values) -> Graph:
+    def format_to_graphviz(graph: NonlinearFactorGraph, values: Values, exclude_mps: bool) -> Graph:
         dot = Graph(engine='sfdp')
 
         for key in values.keys():
@@ -25,8 +25,12 @@ class FactorGraphVisualization:
         for i in range(graph.size()):
             factor = graph.at(i)
             if not factor: continue
+
+            fac_type = type(factor).__name__
+            if exclude_mps and 'projection' in fac_type.lower(): continue
+
             factor_name = f'Factor {i}'
-            dot.node(factor_name, type(factor).__name__, shape='box', style='filled')
+            dot.node(factor_name, fac_type, shape='box', style='filled')
             for key in factor.keys():
                 sym = Symbol(key)
                 name, index = chr(sym.chr()), str(sym.index())
@@ -35,8 +39,8 @@ class FactorGraphVisualization:
 
 
     @classmethod
-    def draw_factor_graph(clc, output_folder: str, graph: NonlinearFactorGraph, values: Values, filename: str = 'factor_graph') -> None:
-        s = clc.format_to_graphviz(graph, values)
+    def draw_factor_graph(clc, output_folder: str, graph: NonlinearFactorGraph, values: Values, filename: str = 'factor_graph', exclude_mps = False) -> None:
+        s = clc.format_to_graphviz(graph, values, exclude_mps)
         s.render(filename, format='png', cleanup=True, directory=output_folder)
 
 

@@ -95,3 +95,6 @@ def data_path() -> str:
 
 def load_json(path) -> dict:
     with open(path, 'r') as f: return json.load(f)
+
+def COLMAP_project_path() -> dict:
+    return config()['COLMAP']['project_path']
