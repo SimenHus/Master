@@ -128,8 +128,8 @@ class Application:
             last_state = state
 
     def plot_gt(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
-        ref_traj = np.empty([len(t), 6])
-        cam_traj = np.empty([len(t), 6])
+        ref_traj = np.zeros([len(t), 6])
+        cam_traj = np.zeros([len(t), 6])
         for i, (timestep, state) in enumerate(self.states.items()):
             # print(kf_id, Time.TimeConversion.POSIX_to_STX(keyframe['timestep']))
             Twr = state.pose
@@ -146,8 +146,8 @@ class Application:
 
 
     def plot_estim(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
-        ref_traj = np.empty([len(t), 6])
-        cam_traj = np.empty([len(t), 6])
+        ref_traj = np.zeros([len(t), 6])
+        cam_traj = np.zeros([len(t), 6])
         Trc_estim = self.optimizer.get_node_estimate(self.camera.id, NodeType.EXTRINSIC)
         for i, (timestep, state) in enumerate(self.states.items()):
             # ref_pose = self.optimizer.get_pose_node_estimate(kf_id_int, NodeType.REFERENCE)
@@ -169,8 +169,8 @@ class Application:
 
 
     def plot_extrinsics(self, t, pos_axs: list[plt.Axes], ang_axs: list[plt.Axes]) -> None:
-        traj = np.empty([len(t), 6])
-        traj_gt = np.empty([len(t), 6])
+        traj = np.zeros([len(t), 6])
+        traj_gt = np.zeros([len(t), 6])
         gt = Geometry.SE3.as_vector(self.Trc_gt)
         for i, Trc in enumerate(self.Trc_traj):
             traj_gt[i, :] = gt
