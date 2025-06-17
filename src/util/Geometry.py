@@ -61,6 +61,7 @@ class SE3(gtsam.Pose3): # Abstraction of the gtsam Pose3 class
             [1, 0, 0],
             [0, 1, 0]
         ]))
+        rot = SO3.RzRyRx(np.array([90, 0, 90])*np.pi / 180)
         return SE3(rot, [0, 0, 0])
 
 class SO3(gtsam.Rot3): # Abstraction of gtsam Rot3 class

@@ -98,3 +98,6 @@ def load_json(path) -> dict:
 
 def COLMAP_project_path() -> dict:
     return config()['COLMAP']['project_path']
+
+def output_path() -> str:
+    return config()['dir']['output']

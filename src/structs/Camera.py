@@ -61,3 +61,8 @@ class Camera:
         u = fx * normed_pixels[0] + cx
         v = fy * normed_pixels[1] + cy
         return (u, v)
+    
+    def project(self, point: Geometry.Point3) -> Geometry.Point2:
+        normed = point / point[2]
+        projection = self.K@normed
+        return projection[:2]

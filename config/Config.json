@@ -1,6 +1,6 @@
 {
     "dir": {
-        "output": "./output/",
+        "output": "./output",
         "dataloader": "/mnt/c/Users/simen/Desktop/Prog/Dataset/osl",
         "data": "/mnt/c/Users/simen/Desktop/Prog/Dataset/osl/2024-02-08/2024-02-08-14/Cam1/Lens0",
         "static_mask_path": "./output/static_mask.png"
