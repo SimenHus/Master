@@ -14,7 +14,7 @@ from gtsam.symbol_shorthand import L, X, C
 import matplotlib.pyplot as plt
 
 
-def visual_ISAM2_plot(result):
+def visual_ISAM2_plot(result, node_type, delay):
     """
     VisualISAMPlot plots current state of ISAM2 object
     Author: Ellon Paiva
@@ -31,16 +31,12 @@ def visual_ISAM2_plot(result):
         axes = fig.axes[0]
     plt.cla()
 
-    # Plot points
-    # Can't use data because current frame might not see all points
-    # marginals = Marginals(isam.getFactorsUnsafe(), isam.calculateEstimate())
-    # gtsam.plot_3d_points(result, [], marginals)
     gtsam_plot.plot_3d_points(fignum, result, 'rx')
 
     # Plot cameras
     i = 0
-    while result.exists(C(i)):
-        pose_i = result.atPose3(C(i))
+    while result.exists(node_type(i)):
+        pose_i = result.atPose3(node_type(i))
         gtsam_plot.plot_pose3(fignum, pose_i, 10)
         i += 1
 
@@ -48,15 +44,73 @@ def visual_ISAM2_plot(result):
     axes.set_xlim3d(-40, 40)
     axes.set_ylim3d(-40, 40)
     axes.set_zlim3d(-40, 40)
-    plt.pause(1)
+    plt.pause(delay)
+
+
+def boat_movement(steps=100, delta_t=0.1):
+    trajectory = []
+
+    radius = 30.0  # meters
+    angular_speed = 2 * np.pi / (steps * delta_t)  # one full circle
+    roll_amp = 0.1      # radians
+    pitch_amp = 0.05    # radians
+    bobbing_freq = 0.5  # Hz (frequency of motion)
+    z_amp = 0.3         # meters (wave height)
+    sway_amp = 0.2      # meters (sideways motion)
+
+    for i in range(steps):
+        t = i * delta_t
+        theta = np.pi - angular_speed * t  # start at (30, 0), CCW
+
+        # Base circular position
+        base_x = radius * np.cos(theta)
+        base_y = radius * np.sin(theta)
+
+        # Tangent unit vector (direction of motion)
+        dx = -np.sin(theta)
+        dy = np.cos(theta)
+
+        # Normal vector (lateral direction pointing outward)
+        nx = -dy
+        ny = dx
+
+        # Add lateral sway in normal direction
+        sway = sway_amp * np.sin(2 * np.pi * bobbing_freq * t + np.pi / 3)
+        x = base_x + sway * nx
+        y = base_y + sway * ny
+
+        # Z bobbing due to waves
+        z = z_amp * np.sin(2 * np.pi * bobbing_freq * t)
+
+        # Oscillatory roll and pitch
+        roll = roll_amp * np.sin(2 * np.pi * bobbing_freq * t)
+        pitch = pitch_amp * np.sin(2 * np.pi * bobbing_freq * t + np.pi / 4)
+
+        # Yaw: facing tangent to path
+        yaw = theta + np.pi / 2
+
+        # Construct Pose
+        R = Geometry.SO3.RzRyRx(roll, pitch, yaw)
+        t = [x, y, z]
+
+        trajectory.append(Geometry.SE3.from_vector(np.array([roll, pitch, yaw, x, y, z])))
+
+    return trajectory
 
 
 class Rotate:
+
+    @classmethod
+    def ROLL(clc, degs) -> Geometry.SE3:
+        return Geometry.SE3(Geometry.SO3.Rx(degs*np.pi/180),  [0, 0, 0])
+    
+    @classmethod
+    def PITCH(clc, degs) -> Geometry.SE3:
+        return Geometry.SE3(Geometry.SO3.Ry(degs*np.pi/180), [0, 0, 0])
     
     @classmethod
     def YAW(clc, degs) -> Geometry.SE3:
         return Geometry.SE3(Geometry.SO3.Rz(degs*np.pi/180), [0, 0, 0])
-
 
 class Move:
     FORWARD = Geometry.SE3(Geometry.SO3(), [1, 0, 0])
@@ -69,43 +123,12 @@ class Move:
 class Application:
     
     def __init__(self) -> None:
-        self.optimizer = Optimizer()
-        self.traj = self.generate_trajectory()
-        # self.traj = SFMdata.createPoses(steps=30)
-        # self.mps = self.generate_mps()
-        self.mps = SFMdata.createPoints()
+        self.optimizer = Optimizer(relin_skip=1, relin_thres=0.1)
+        # self.traj = SFMdata.createPoses(steps=16)
+        self.traj = boat_movement()
+        self.mps = self.generate_mps()
 
         self.camera = Camera([50., 50., 50., 50.], [])
-
-    def generate_trajectory(self) -> list[Geometry.SE3]:
-        start = Geometry.SE3(Rotate.YAW(180).rotation(), [30, 30, 0])
-        mag = 30
-
-        steps = [
-            [Move.FORWARD] * mag,
-            [Move.FORWARD] * mag,
-            [Rotate.YAW(90)],
-            [Move.FORWARD] * mag,
-            [Move.FORWARD] * mag,
-            [Rotate.YAW(90)],
-            [Move.FORWARD] * mag,
-            [Move.FORWARD] * mag,
-            [Rotate.YAW(90)],
-            [Move.FORWARD] * mag,
-            [Move.FORWARD] * mag
-        ]
-
-        traj = [start]
-        last_pose = start
-        for iteration in steps:
-            total_odom = Geometry.SE3()
-            for step in iteration:
-                total_odom = total_odom.compose(step)
-            new_pose = last_pose.compose(total_odom)
-            traj.append(new_pose)
-            last_pose = new_pose
-
-        return traj
 
     def generate_mps(self) -> list[Geometry.Point3]:
         mps = [
@@ -117,6 +140,14 @@ class Application:
             np.array([-10, 10, -10]),
             np.array([10, -10, -10]),
             np.array([-10, -10, -10]),
+            np.array([5, 5, 5]),
+            np.array([-5, 5, 5]),
+            np.array([5, -5, 5]),
+            np.array([-5, -5, 5]),
+            np.array([5, 5, -5]),
+            np.array([-5, 5, -5]),
+            np.array([5, -5, -5]),
+            np.array([-5, -5, -5]),
         ]
         return mps
 
@@ -124,28 +155,35 @@ class Application:
         n_priors = 2
         plt.ion()
 
-
         prior_sigmas = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
-        init_noise = Geometry.SE3.from_vector(np.array([1, 2, -1, 0.1, -0.05, 0.2]), radians=False)
 
-        Trc = Geometry.SE3()
+        init_noise = Geometry.SE3.from_vector(np.array([1, 2, -1, 0.1, -0.05, 0.2]), radians=False)
+        Trc_noise = Geometry.SE3.from_vector(np.array([1, 0.5, -0.2, 0.1, 0.1, -0.1]), radians=False)
+        landmark_noise = np.array([0.3, -0.2, 0.2])
+
+        self.Trc = Geometry.SE3(Rotate.ROLL(-90).rotation(), [0, 0, 5])
+        Trc_init = self.Trc.compose(Trc_noise)
+
+        self.optimizer.add_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
+        self.optimizer.add_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, prior_sigmas)
+
         for i, Twr in enumerate(self.traj):
-            extra_optims = 1
+            extra_optims = 0
             
-            Twc = Twr.compose(Trc)
+            Twc = Twr.compose(self.Trc)
             Twc_noisy = Twc.compose(init_noise)
-            self.optimizer.add_node(Twc_noisy, i, NodeType.CAMERA)
+            self.optimizer.add_node(Twr, i, NodeType.REFERENCE)
+            # self.optimizer.add_node(Twc_noisy, i, NodeType.CAMERA)
 
             if i < n_priors:
-                self.optimizer.add_pose_prior(Twc_noisy, i, NodeType.CAMERA, prior_sigmas)
+                self.optimizer.add_prior(Twr, i, NodeType.REFERENCE, prior_sigmas)
 
             for j, point in enumerate(self.mps):
-                # if self.optimizer.get_node_estimate(mp_id, NodeType.LANDMARK) is None: self.optimizer.add_node(point3d, mp_id, NodeType.LANDMARK)
-                # self.optimizer.add_projection_factor(mp_id, pixels, i, self.camera)
                 point_cam = Twc.transformTo(point)
                 pixels = self.camera.project(point_cam)
-                Tc_c = Geometry.SE3()
-                self.optimizer.add_smart_projection_factor(j, pixels, i, self.camera, Tc_c)
+            
+                if self.optimizer.get_node_estimate(j, NodeType.LANDMARK) is None: self.optimizer.add_node(point + landmark_noise, j, NodeType.LANDMARK)
+                self.optimizer.add_extrinsic_projection_factor(j, pixels, i, self.camera)
 
             try:
                 if i > 0:
@@ -157,15 +195,15 @@ class Application:
                 # if i == 5: break
                 print(i)
             
-            visual_ISAM2_plot(self.optimizer.current_estimate)
+            # visual_ISAM2_plot(self.optimizer.current_estimate, NodeType.REFERENCE, 0.1)
         
         plt.ioff()
         plt.show()
 
-    def get_estim_traj(self) -> list[Geometry.SE3]:
+    def get_estim_traj(self, node_type) -> list[Geometry.SE3]:
         traj = []
         for i in range(len(self.traj)):
-            Twc = self.optimizer.get_node_estimate(i, NodeType.CAMERA)
+            Twc = self.optimizer.get_node_estimate(i, node_type)
             traj.append(Twc)
         return traj
     
@@ -200,12 +238,26 @@ class Application:
         fig, axs = plt.subplots(4, 3)
         pos_axs, ang_axs, pos_err_axs, ang_error_axs = axs
         t = np.arange(len(self.traj))
-        gt_traj = self.traj
-        estim_traj = self.get_estim_traj()
-        error_traj = self.get_error_traj(gt_traj, estim_traj)
-        self.plot_SE3(t, gt_traj, pos_axs, ang_axs, 'Cam-gt')
-        self.plot_SE3(t, estim_traj, pos_axs, ang_axs, 'Cam-estim')
-        self.plot_SE3(t, error_traj, pos_err_axs, ang_error_axs, 'Error')
+
+        Trc = self.optimizer.get_node_estimate(self.camera.id, NodeType.EXTRINSIC)
+
+        gt_traj_ref = self.traj
+        gt_traj_cam = [pose.compose(self.Trc) for pose in gt_traj_ref]
+
+        ref_estim_traj = self.get_estim_traj(NodeType.REFERENCE)
+        cam_estim_traj = [Twr.compose(Trc) for Twr in ref_estim_traj if Twr is not None]
+
+        error_traj_cam = self.get_error_traj(gt_traj_cam, cam_estim_traj)
+        error_traj_ref = self.get_error_traj(gt_traj_ref, ref_estim_traj)
+
+        self.plot_SE3(t, gt_traj_cam, pos_axs, ang_axs, 'Cam-gt')
+        self.plot_SE3(t, cam_estim_traj, pos_axs, ang_axs, 'Cam-estim')
+
+        self.plot_SE3(t, gt_traj_ref, pos_axs, ang_axs, 'Ref-gt')
+        self.plot_SE3(t, ref_estim_traj, pos_axs, ang_axs, 'Ref-estim')
+
+        self.plot_SE3(t, error_traj_cam, pos_err_axs, ang_error_axs, 'Cam-error')
+        self.plot_SE3(t, error_traj_ref, pos_err_axs, ang_error_axs, 'Ref-error')
 
         labels = {
             0: ['x', 'y', 'z'],
@@ -226,9 +278,14 @@ if __name__ == '__main__':
 
     app = Application()
     app.start()
+
+    estim = app.optimizer.get_node_estimate(app.camera.id, NodeType.EXTRINSIC)
+    gt = app.Trc
+    print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
+    print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
     
     graph, estimate = app.optimizer.get_visualization_variables()
-    # Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate, exclude_mps = True)
+    Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate, exclude_mps = False)
 
     app.show()
     

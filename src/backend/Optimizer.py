@@ -8,32 +8,38 @@ from gtsam import GenericProjectionFactorCal3_S2
 from gtsam import Cal3_S2
 from gtsam import DegeneracyMode, LinearizationMode
 from gtsam import BetweenFactorPose3, PriorFactorPose3
-from gtsam import NonlinearEqualityPose3
+from gtsam import NonlinearEqualityPose3, PriorFactorPoint3
 from gtsam import noiseModel
 from gtsam.symbol_shorthand import X, T, C, V, L
 from gtsam import triangulatePoint3
 
 
 import cv2
-from enum import Enum
 from dataclasses import dataclass
-from .factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor, HandEyeFactor
+from .factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor, HandEyeFactor, ExtrinsicProjectionFactor
 from src.util import Geometry
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.structs import Camera
 
-class NodeType(Enum):
+class NodeType:
     CAMERA = C
     REFERENCE = X
     EXTRINSIC = T
     VELOCITY = V
     LANDMARK = L
 
-class Status(Enum):
+class Status:
     PENDING = 0
     ADDED = 1
+
+def PriorFactorMap(node_type: NodeType) -> NonlinearFactor:
+    match node_type:
+        case NodeType.REFERENCE | NodeType.EXTRINSIC | NodeType.CAMERA:
+            return PriorFactorPose3
+        case NodeType.LANDMARK:
+            return PriorFactorPoint3
 
 @dataclass
 class Factor:
@@ -117,7 +123,7 @@ class FactorDatabase:
     
 
 class Optimizer:
-    def __init__(self) -> None:
+    def __init__(self, relin_skip = None, relin_thres = None) -> None:
         self.factor_db = FactorDatabase()
         self.new_nodes = Values()
 
@@ -132,40 +138,43 @@ class Optimizer:
         )
 
         self.isam_parameters = ISAM2Params()
-        # self.isam_parameters.setRelinearizeThreshold(0.1)
-        # self.isam_parameters.relinearizeSkip = 3
+        if relin_skip is not None:
+            self.isam_parameters.relinearizeSkip = relin_skip
+        if relin_thres is not None:
+            self.isam_parameters.setRelinearizeThreshold(relin_thres)
         self.isam = ISAM2(self.isam_parameters)
 
     def _add_factor(self, factor, identifier: str) -> None:
         self.factor_db.add_pending(identifier, factor) # Add factor as pending to database
 
     def add_node(self, value: 'Geometry', id: int, node_type: NodeType) -> None:
-        self.new_nodes.insert(node_type.value(id), value)
+        self.new_nodes.insert(node_type(id), value)
 
     def add_between_factor(self, pose_from: int, pose_to: int, node_type: NodeType, measurement: 'Geometry.SE3', sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
+        from_key, to_key = node_type(pose_from), node_type(pose_to)
         self._add_factor(BetweenFactorPose3(from_key, to_key, measurement, noise_model), f'Between{from_key}-{to_key}')
 
     def add_velocity_extrinsic_factor(self, pose_from: int, pose_to: int, camera_id: int, node_type: NodeType, measurement: 'Geometry.State', dt: float, sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
-        extrinsics_key = NodeType.EXTRINSIC.value(camera_id)
+        from_key, to_key = node_type(pose_from), node_type(pose_to)
+        extrinsics_key = NodeType.EXTRINSIC(camera_id)
         self._add_factor(VelocityExtrinsicFactor(from_key, to_key, extrinsics_key, measurement, dt, noise_model), f'VelocityExtrinsic{from_key}-{extrinsics_key}-{to_key}')
 
     def add_velocity_factor(self, pose_from: int, pose_to: int, node_type: NodeType, measurement: 'Geometry.Vector6', sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
+        from_key, to_key = node_type(pose_from), node_type(pose_to)
         self._add_factor(VelocityFactor(from_key, to_key, measurement, noise_model), f'Velocity{from_key}-{to_key}')
 
     def add_pose_equality(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType) -> None:
-        key = node_type.value(pose_id)
+        key = node_type(pose_id)
         self._add_factor(NonlinearEqualityPose3(key, value), f'Equality{key}')
 
-    def add_pose_prior(self, value: 'Geometry.SE3', pose_id: int, node_type: NodeType, sigma: list) -> None:
+    def add_prior(self, value, id: int, node_type: NodeType, sigma: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigma)
-        key = node_type.value(pose_id)
-        self._add_factor(PriorFactorPose3(key, value, noise_model), f'Prior{key}')
+        key = node_type(id)
+        factor = PriorFactorMap(node_type)
+        self._add_factor(factor(key, value, noise_model), f'Prior{key}')
 
     def add_camera_between_factor(self, ref_index: int, camera_id: int, camera_pose_id: int, sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
@@ -177,34 +186,60 @@ class Optimizer:
 
     def add_hand_eye_factor(self, pose_from: int, pose_to: int, camera_id: int, state_from: Geometry.State, state_to: Geometry.State, node_type: NodeType, sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
-        from_key, to_key = node_type.value(pose_from), node_type.value(pose_to)
-        extr_key = NodeType.EXTRINSIC.value(camera_id)
+        from_key, to_key = node_type(pose_from), node_type(pose_to)
+        extr_key = NodeType.EXTRINSIC(camera_id)
         self._add_factor(HandEyeFactor(from_key, to_key, extr_key, state_from, state_to, noise_model), f'HandEye{from_key}-{to_key}-{extr_key}')
 
-    def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
-        identifier = f'MapPoint{map_point_id}'
-        new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id)
+
+    def add_extrinsic_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera') -> None:
+        landmark = f'MapPoint{map_point_id}'
+        new_observation = self.factor_db.add_map_point_observation(landmark, pixels, pose_id)
         if not new_observation: return
 
-        observations = self.factor_db.observations(identifier)
-        if len(observations) < 5: return # Need x or more observations before adding to FG
-        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
+        observations = self.factor_db.observations(landmark)
+        x = 2
+        if len(observations) < x: return # Need x or more observations before adding to FG
 
-        K = Cal3_S2(*camera.parameters_with_skew)
+        identifier = f'{landmark}-{NodeType.REFERENCE(pose_id)}'
 
-        if identifier in self.factor_db:
-            factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Trc)
+        if len(observations) > x:
+            factor = ExtrinsicProjectionFactor(NodeType.REFERENCE(pose_id), NodeType.EXTRINSIC(camera.id), NodeType.LANDMARK(map_point_id),
+                                               camera, pixels, self.generic_pixel_noise)
             self._add_factor(factor, identifier)
         else:
             for (pixels, pose_id) in observations:
-                factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, C(pose_id), L(map_point_id), K, Trc)
+                identifier = f'{landmark}-{NodeType.REFERENCE(pose_id)}'
+                factor = ExtrinsicProjectionFactor(NodeType.REFERENCE(pose_id), NodeType.EXTRINSIC(camera.id), NodeType.LANDMARK(map_point_id),
+                                               camera, pixels, self.generic_pixel_noise)
+                self._add_factor(factor, identifier)
+
+
+    def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, node_type: NodeType, camera: 'Camera', Trc = None) -> None:
+        landmark = f'MapPoint{map_point_id}'
+        new_observation = self.factor_db.add_map_point_observation(landmark, pixels, pose_id)
+        if not new_observation: return
+
+        observations = self.factor_db.observations(landmark)
+        x = 2
+        if len(observations) < x: return # Need x or more observations before adding to FG
+        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
+
+        K = Cal3_S2(*camera.parameters_with_skew)
+        identifier = f'{landmark}-{node_type(pose_id)}'
+        if len(observations) > x:
+            factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, node_type(pose_id), L(map_point_id), K, Trc)
+            self._add_factor(factor, identifier)
+        else:
+            for (pixels, pose_id) in observations:
+                identifier = f'{landmark}-{node_type(pose_id)}'
+                factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, node_type(pose_id), L(map_point_id), K, Trc)
                 self._add_factor(factor, identifier)
 
 
     def add_smart_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
         identifier = f'MapPoint{map_point_id}'
 
-        if len(self.factor_db.observations(identifier)) > 50: return
+        # if len(self.factor_db.observations(identifier)) > 50: return
         is_new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
         if not is_new_observation: return
 
@@ -233,7 +268,7 @@ class Optimizer:
         self.factor_db.finish_update() # Mark factor update as complete
 
     def get_node_estimate(self, id: int, node_type: NodeType) -> 'Geometry':
-        key = node_type.value(id)
+        key = node_type(id)
         values = None
         if self.new_nodes.exists(key): values = self.new_nodes
         if self.current_estimate.exists(key): values = self.current_estimate

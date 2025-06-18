@@ -5,3 +5,4 @@ from .ReferenceAnchor import ReferenceAnchor
 from .VelocityExtrinsicFactor import VelocityExtrinsicFactor
 from .VelocityFactor import VelocityFactor
 from .HandEyeFactor import HandEyeFactor
+from .ExtrinsicProjectionFactor import ExtrinsicProjectionFactor
