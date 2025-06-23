@@ -47,7 +47,7 @@ def visual_ISAM2_plot(result, node_type, delay):
     plt.pause(delay)
 
 
-def boat_movement(steps=100, delta_t=0.1):
+def boat_movement(steps=100, delta_t=0.1) -> list[Geometry.SE3]:
     trajectory = []
 
     radius = 30.0  # meters
@@ -98,6 +98,53 @@ def boat_movement(steps=100, delta_t=0.1):
     return trajectory
 
 
+def boat_straight_movement(steps=100) -> list[Geometry.SE3]:
+    trajectory = []
+
+    start_x = -30.0  # match circular motion start
+    start_y = -30.0
+    start_z = 0
+    end_x = 30.0
+    total_distance = end_x - start_x
+    delta_x = total_distance / (steps - 1)  # to include both start and end points
+
+    for i in range(steps):
+        x = start_x + i * delta_x
+        y = start_y
+        z = start_z
+
+        roll = 180.0
+        pitch = 0.0
+        yaw = 0.0
+
+        trajectory.append(Geometry.SE3.from_vector(np.array([roll, pitch, yaw, x, y, z]), radians=False))
+
+    return trajectory
+
+
+
+def generate_mps() -> list[Geometry.Point3]:
+    mps = [
+        np.array([10, 10, 10]),
+        np.array([-10, 10, 10]),
+        np.array([10, -10, 10]),
+        np.array([-10, -10, 10]),
+        np.array([10, 10, -10]),
+        np.array([-10, 10, -10]),
+        np.array([10, -10, -10]),
+        np.array([-10, -10, -10]),
+        np.array([5, 5, 5]),
+        np.array([-5, 5, 5]),
+        np.array([5, -5, 5]),
+        np.array([-5, -5, 5]),
+        np.array([5, 5, -5]),
+        np.array([-5, 5, -5]),
+        np.array([5, -5, -5]),
+        np.array([-5, -5, -5]),
+    ]
+    return mps
+
+
 class Rotate:
 
     @classmethod
@@ -124,32 +171,12 @@ class Application:
     
     def __init__(self) -> None:
         self.optimizer = Optimizer(relin_skip=1, relin_thres=0.1)
-        # self.traj = SFMdata.createPoses(steps=16)
         self.traj = boat_movement()
-        self.mps = self.generate_mps()
+        self.traj = boat_straight_movement()
+        self.mps = generate_mps()
+        self.mps = [self.mps[0]]
 
         self.camera = Camera([50., 50., 50., 50.], [])
-
-    def generate_mps(self) -> list[Geometry.Point3]:
-        mps = [
-            np.array([10, 10, 10]),
-            np.array([-10, 10, 10]),
-            np.array([10, -10, 10]),
-            np.array([-10, -10, 10]),
-            np.array([10, 10, -10]),
-            np.array([-10, 10, -10]),
-            np.array([10, -10, -10]),
-            np.array([-10, -10, -10]),
-            np.array([5, 5, 5]),
-            np.array([-5, 5, 5]),
-            np.array([5, -5, 5]),
-            np.array([-5, -5, 5]),
-            np.array([5, 5, -5]),
-            np.array([-5, 5, -5]),
-            np.array([5, -5, -5]),
-            np.array([-5, -5, -5]),
-        ]
-        return mps
 
     def start(self):
         n_priors = 2
@@ -158,7 +185,7 @@ class Application:
         prior_sigmas = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
 
         init_noise = Geometry.SE3.from_vector(np.array([1, 2, -1, 0.1, -0.05, 0.2]), radians=False)
-        Trc_noise = Geometry.SE3.from_vector(np.array([1, 0.5, -0.2, 0.1, 0.1, -0.1]), radians=False)
+        Trc_noise = Geometry.SE3.from_vector(np.array([1, 0.5, -0.6, 0.1, 0.1, -0.1]), radians=False)
         landmark_noise = np.array([0.3, -0.2, 0.2])
 
         self.Trc = Geometry.SE3(Rotate.ROLL(-90).rotation(), [0, 0, 5])
@@ -173,10 +200,11 @@ class Application:
             Twc = Twr.compose(self.Trc)
             Twc_noisy = Twc.compose(init_noise)
             self.optimizer.add_node(Twr, i, NodeType.REFERENCE)
+            self.optimizer.add_pose_equality(Twr, i, NodeType.REFERENCE)
             # self.optimizer.add_node(Twc_noisy, i, NodeType.CAMERA)
 
-            if i < n_priors:
-                self.optimizer.add_prior(Twr, i, NodeType.REFERENCE, prior_sigmas)
+            # if i < n_priors:
+                # self.optimizer.add_prior(Twr, i, NodeType.REFERENCE, prior_sigmas)
 
             for j, point in enumerate(self.mps):
                 point_cam = Twc.transformTo(point)
@@ -273,6 +301,43 @@ class Application:
                 ax.set_title(labels[i][j])
 
         plt.show()
+
+
+    def summarize_landmarks(self) -> None:
+        landmarks = self.mps
+        for i, gt in enumerate(landmarks):
+            landmark_estim = self.optimizer.get_node_estimate(i, NodeType.LANDMARK)
+            
+            print(f'Landmark {i+1}:')
+            print(f'GT = {gt}')
+            print(f'Estim = {landmark_estim}')
+            print(f'Error = {landmark_estim - gt}')
+            print('\n')
+
+
+    def check_ambig(self) -> None:
+        poses = self.traj
+        landmarks = self.mps
+        Trc = self.Trc
+
+        pose_estims = [self.optimizer.get_node_estimate(i, NodeType.REFERENCE) for i in range(len(poses))]
+        landmark_estims = [self.optimizer.get_node_estimate(i, NodeType.LANDMARK) for i in range(len(landmarks))]
+        Trc_estim = self.optimizer.get_node_estimate(self.camera.id, NodeType.EXTRINSIC)
+
+
+        for i, landmark in enumerate(landmark_estims):
+            pose = pose_estims[0]
+            Twc_estim = pose.compose(Trc_estim)
+            landmark_c_estim = Twc_estim.transformTo(landmark)
+            landmark_c_gt = poses[0].compose(Trc).transformTo(landmarks[i])
+            print(f'Landmark {i+1}:')
+            print(f'GT = {landmarks[i]}')
+            print(f'Estim = {landmark}')
+            print(f'Landmark_c = {landmark_c_estim}')
+            print(f'Landmark_c gt = {landmark_c_gt}')
+            print(f'Landmark_c error = {landmark_c_estim - landmark_c_gt}')
+            print('\n')
+        
             
 if __name__ == '__main__':
 
@@ -281,8 +346,13 @@ if __name__ == '__main__':
 
     estim = app.optimizer.get_node_estimate(app.camera.id, NodeType.EXTRINSIC)
     gt = app.Trc
+    error = Geometry.SE3.as_vector(estim) - Geometry.SE3.as_vector(gt)
     print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
     print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
+    print(f'Trc error: {error}')
+
+    # app.summarize_landmarks()
+    app.check_ambig()
     
     graph, estimate = app.optimizer.get_visualization_variables()
     Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate, exclude_mps = False)
