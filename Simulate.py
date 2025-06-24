@@ -5,16 +5,14 @@ from src.util import Geometry, DataLoader, Time
 from src.visualization import Visualization
 
 import numpy as np
-from pycolmap import Reconstruction
 
-from gtsam.examples import SFMdata
 import gtsam.utils.plot as gtsam_plot
 from gtsam.symbol_shorthand import L, X, C
 
 import matplotlib.pyplot as plt
 
 
-def visual_ISAM2_plot(result, node_type, delay):
+def visual_ISAM2_plot(result, node_type, delay=0.1):
     """
     VisualISAMPlot plots current state of ISAM2 object
     Author: Ellon Paiva
@@ -113,7 +111,7 @@ def boat_straight_movement(steps=100) -> list[Geometry.SE3]:
         y = start_y
         z = start_z
 
-        roll = 180.0
+        roll = 0.0
         pitch = 0.0
         yaw = 0.0
 
@@ -174,22 +172,22 @@ class Application:
         self.traj = boat_movement()
         self.traj = boat_straight_movement()
         self.mps = generate_mps()
-        self.mps = [self.mps[0]]
+        # self.mps = [self.mps[0]]
 
         self.camera = Camera([50., 50., 50., 50.], [])
 
     def start(self):
-        n_priors = 2
         plt.ion()
 
-        prior_sigmas = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])
+        prior_sigmas = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])*1e3
 
         init_noise = Geometry.SE3.from_vector(np.array([1, 2, -1, 0.1, -0.05, 0.2]), radians=False)
-        Trc_noise = Geometry.SE3.from_vector(np.array([1, 0.5, -0.6, 0.1, 0.1, -0.1]), radians=False)
+        Trc_noise = Geometry.SE3.from_vector(np.array([5, 2.5, -8.6, 2.1, 1.1, -3.1]), radians=False)
         landmark_noise = np.array([0.3, -0.2, 0.2])
 
         self.Trc = Geometry.SE3(Rotate.ROLL(-90).rotation(), [0, 0, 5])
         Trc_init = self.Trc.compose(Trc_noise)
+        print(Trc_init)
 
         self.optimizer.add_node(Trc_init, self.camera.id, NodeType.EXTRINSIC)
         self.optimizer.add_prior(Trc_init, self.camera.id, NodeType.EXTRINSIC, prior_sigmas)
@@ -198,13 +196,9 @@ class Application:
             extra_optims = 0
             
             Twc = Twr.compose(self.Trc)
-            Twc_noisy = Twc.compose(init_noise)
             self.optimizer.add_node(Twr, i, NodeType.REFERENCE)
             self.optimizer.add_pose_equality(Twr, i, NodeType.REFERENCE)
-            # self.optimizer.add_node(Twc_noisy, i, NodeType.CAMERA)
 
-            # if i < n_priors:
-                # self.optimizer.add_prior(Twr, i, NodeType.REFERENCE, prior_sigmas)
 
             for j, point in enumerate(self.mps):
                 point_cam = Twc.transformTo(point)
@@ -223,7 +217,7 @@ class Application:
                 # if i == 5: break
                 print(i)
             
-            # visual_ISAM2_plot(self.optimizer.current_estimate, NodeType.REFERENCE, 0.1)
+            # visual_ISAM2_plot(self.optimizer.current_estimate, NodeType.REFERENCE, delay=0.1)
         
         plt.ioff()
         plt.show()
@@ -350,6 +344,9 @@ if __name__ == '__main__':
     print(f'Estimated Trc: {Geometry.SE3.as_vector(estim)}')
     print(f'Ground truth Trc: {Geometry.SE3.as_vector(gt)}')
     print(f'Trc error: {error}')
+
+    print(f'Estim: {estim}')
+    print(f'GT: {gt}')
 
     # app.summarize_landmarks()
     app.check_ambig()
