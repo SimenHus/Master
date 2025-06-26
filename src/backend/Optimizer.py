@@ -261,8 +261,11 @@ class Optimizer:
         new_factors, removal_indeces = self.factor_db.prepare_update()
         
         # Perform incremental update to iSAM, and remove/readd nodes to be updated
-        self.isam.update(new_factors, self.new_nodes, removal_indeces)
-        for _ in range(extra_updates): self.isam.update() # Perform extra updates
+        try:
+            self.isam.update(new_factors, self.new_nodes, removal_indeces)
+            for _ in range(extra_updates): self.isam.update() # Perform extra updates
+        except Exception as e:
+            print(f'iSAM Update failed!!! {e}')
 
         self.new_nodes.clear() # Clear list of new nodes, since they are now added
         self.factor_db.finish_update() # Mark factor update as complete

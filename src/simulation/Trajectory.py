@@ -76,7 +76,7 @@ class TrajectoryGenerator:
         
         dt = settings.dt
         circ_factor = 1/2
-        radius = 30.0
+        radius = 30
         circumference = 2 * np.pi * radius * circ_factor
         total_movement = circumference + radius
 

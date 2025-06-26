@@ -13,18 +13,16 @@ import matplotlib.pyplot as plt
 
 
 class Application:
-    
-    def __init__(self, w_start=0., w_end=1., w_resolution=10, visualize=False, steps_per_iteration=100) -> None:
+
+    def __init__(self, w_list, visualize=False, settings=SeaStates()) -> None:
 
         self.plot_3d = None
         if visualize: self.plot_3d = LiveTrajectory3D(NodeType.REFERENCE, delay=0.01)
 
-        self.traj_settings = SeaStates.preset_calm()
-        # self.traj_settings = SeaStates.preset_sway()
-        self.traj_settings.set_steps(steps_per_iteration)
+        self.traj_settings = settings
         self.mps = LandmarkGenerator.grid_mps()
 
-        self.w_list = np.linspace(w_start, w_end, w_resolution)
+        self.w_list = w_list
 
         self.camera = Camera([50., 50., 50., 50.], [])
 
@@ -33,9 +31,9 @@ class Application:
         self.Trc_init = self.Trc.compose(Trc_noise)
         self.Trc_prior_sigmas = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])*1e3
 
-        self.landmark_noise = np.array([2.8, -1.9, 3.7])
-
-
+    def landmark_noise(self) -> Geometry.Point3:
+        magnitude = 2
+        return np.random.rand(3) * magnitude
 
     def optimize_traj(self, optimizer: Optimizer, traj: list[Geometry.SE3]) -> None:
          
@@ -46,7 +44,7 @@ class Application:
 
         # Add all landmarks to fg
         for j, point in enumerate(self.mps):
-            optimizer.add_node(point + self.landmark_noise, j, NodeType.LANDMARK)
+            optimizer.add_node(point + self.landmark_noise(), j, NodeType.LANDMARK)
 
         # Loop through trajectory
         for i, Twr in enumerate(traj):
@@ -123,6 +121,14 @@ class Application:
 
             
 if __name__ == '__main__':
-    app = Application(w_start=-0.5, w_end=0.5, w_resolution=10, visualize=False, steps_per_iteration=10)
+    # settings = SeaStates()
+    settings = SeaStates.preset_calm()
+    # settings = SeaStates.preset_sway()
+    settings.set_steps(10)
+    w_start = -0.5
+    w_end = 1.0
+    w_resolution = 50
+    w_list = np.linspace(w_start, w_end, w_resolution)
+    app = Application(w_list, visualize=False, settings=settings)
     app.start()
     app.show()
