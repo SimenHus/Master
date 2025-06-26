@@ -2,145 +2,13 @@
 from src.backend import Optimizer, NodeType
 from src.structs import Camera
 from src.util import Geometry, DataLoader, Time
-from src.visualization import Visualization
+from src.visualization import Visualization, LiveTrajectory3D
+from src.simulation import TrajectoryGenerator, SeaStates, LandmarkGenerator
 
 import numpy as np
 
-import gtsam.utils.plot as gtsam_plot
-from gtsam.symbol_shorthand import L, X, C
-
 import matplotlib.pyplot as plt
 
-
-def visual_ISAM2_plot(result, node_type, delay=0.1):
-    """
-    VisualISAMPlot plots current state of ISAM2 object
-    Author: Ellon Paiva
-    Based on MATLAB version by: Duy Nguyen Ta and Frank Dellaert
-    """
-
-    # Declare an id for the figure
-    fignum = 0
-
-    fig = plt.figure(fignum)
-    if not fig.axes:
-        axes = fig.add_subplot(projection='3d')
-    else:
-        axes = fig.axes[0]
-    plt.cla()
-
-    gtsam_plot.plot_3d_points(fignum, result, 'rx')
-
-    # Plot cameras
-    i = 0
-    while result.exists(node_type(i)):
-        pose_i = result.atPose3(node_type(i))
-        gtsam_plot.plot_pose3(fignum, pose_i, 10)
-        i += 1
-
-    # draw
-    axes.set_xlim3d(-40, 40)
-    axes.set_ylim3d(-40, 40)
-    axes.set_zlim3d(-40, 40)
-    plt.pause(delay)
-
-
-def boat_movement(steps=100, delta_t=0.1) -> list[Geometry.SE3]:
-    trajectory = []
-
-    radius = 30.0  # meters
-    angular_speed = 2 * np.pi / (steps * delta_t)  # one full circle
-    roll_amp = 0.1      # radians
-    pitch_amp = 0.05    # radians
-    bobbing_freq = 0.5  # Hz (frequency of motion)
-    z_amp = 0.3         # meters (wave height)
-    sway_amp = 0.2      # meters (sideways motion)
-
-    for i in range(steps):
-        t = i * delta_t
-        theta = np.pi - angular_speed * t  # start at (30, 0), CCW
-
-        # Base circular position
-        base_x = radius * np.cos(theta)
-        base_y = radius * np.sin(theta)
-
-        # Tangent unit vector (direction of motion)
-        dx = -np.sin(theta)
-        dy = np.cos(theta)
-
-        # Normal vector (lateral direction pointing outward)
-        nx = -dy
-        ny = dx
-
-        # Add lateral sway in normal direction
-        sway = sway_amp * np.sin(2 * np.pi * bobbing_freq * t + np.pi / 3)
-        x = base_x + sway * nx
-        y = base_y + sway * ny
-
-        # Z bobbing due to waves
-        z = z_amp * np.sin(2 * np.pi * bobbing_freq * t)
-
-        # Oscillatory roll and pitch
-        roll = roll_amp * np.sin(2 * np.pi * bobbing_freq * t)
-        pitch = pitch_amp * np.sin(2 * np.pi * bobbing_freq * t + np.pi / 4)
-
-        # Yaw: facing tangent to path
-        yaw = theta + np.pi / 2
-
-        # Construct Pose
-        R = Geometry.SO3.RzRyRx(roll, pitch, yaw)
-        t = [x, y, z]
-
-        trajectory.append(Geometry.SE3.from_vector(np.array([roll, pitch, yaw, x, y, z])))
-
-    return trajectory
-
-
-def boat_straight_movement(steps=100) -> list[Geometry.SE3]:
-    trajectory = []
-
-    start_x = -30.0  # match circular motion start
-    start_y = -30.0
-    start_z = 0
-    end_x = 30.0
-    total_distance = end_x - start_x
-    delta_x = total_distance / (steps - 1)  # to include both start and end points
-
-    for i in range(steps):
-        x = start_x + i * delta_x
-        y = start_y
-        z = start_z
-
-        roll = 0.0
-        pitch = 0.0
-        yaw = 0.0
-
-        trajectory.append(Geometry.SE3.from_vector(np.array([roll, pitch, yaw, x, y, z]), radians=False))
-
-    return trajectory
-
-
-
-def generate_mps() -> list[Geometry.Point3]:
-    mps = [
-        np.array([10, 10, 10]),
-        np.array([-10, 10, 10]),
-        np.array([10, -10, 10]),
-        np.array([-10, -10, 10]),
-        np.array([10, 10, -10]),
-        np.array([-10, 10, -10]),
-        np.array([10, -10, -10]),
-        np.array([-10, -10, -10]),
-        np.array([5, 5, 5]),
-        np.array([-5, 5, 5]),
-        np.array([5, -5, 5]),
-        np.array([-5, -5, 5]),
-        np.array([5, 5, -5]),
-        np.array([-5, 5, -5]),
-        np.array([5, -5, -5]),
-        np.array([-5, -5, -5]),
-    ]
-    return mps
 
 
 class Rotate:
@@ -169,16 +37,16 @@ class Application:
     
     def __init__(self) -> None:
         self.optimizer = Optimizer(relin_skip=1, relin_thres=0.1)
-        self.traj = boat_movement()
-        self.traj = boat_straight_movement()
-        self.mps = generate_mps()
-        # self.mps = [self.mps[0]]
+        traj_settings = SeaStates()
+        self.traj = TrajectoryGenerator.circular(w=1., settings=traj_settings)
+        self.traj = TrajectoryGenerator.circular(w=0., settings=traj_settings)
+        self.mps = LandmarkGenerator.grid_mps()
 
         self.camera = Camera([50., 50., 50., 50.], [])
 
     def start(self):
-        plt.ion()
 
+        plot_3D = LiveTrajectory3D(NodeType.REFERENCE, delay=1.0)
         prior_sigmas = np.array([0.3, 0.3, 0.3, 0.1, 0.1, 0.1])*1e3
 
         init_noise = Geometry.SE3.from_vector(np.array([1, 2, -1, 0.1, -0.05, 0.2]), radians=False)
@@ -217,10 +85,10 @@ class Application:
                 # if i == 5: break
                 print(i)
             
-            # visual_ISAM2_plot(self.optimizer.current_estimate, NodeType.REFERENCE, delay=0.1)
+            plot_3D.update(self.optimizer.current_estimate)
         
-        plt.ioff()
-        plt.show()
+        plot_3D.finished()
+        
 
     def get_estim_traj(self, node_type) -> list[Geometry.SE3]:
         traj = []
@@ -349,7 +217,7 @@ if __name__ == '__main__':
     print(f'GT: {gt}')
 
     # app.summarize_landmarks()
-    app.check_ambig()
+    # app.check_ambig()
     
     graph, estimate = app.optimizer.get_visualization_variables()
     Visualization.FactorGraphVisualization.draw_factor_graph('./output/', graph, estimate, exclude_mps = False)
