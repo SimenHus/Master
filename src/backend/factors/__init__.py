@@ -6,3 +6,4 @@ from .VelocityExtrinsicFactor import VelocityExtrinsicFactor
 from .VelocityFactor import VelocityFactor
 from .HandEyeFactor import HandEyeFactor
 from .ExtrinsicProjectionFactor import ExtrinsicProjectionFactor
+from .ExtrinsicProjectionFactorNumeric import ExtrinsicProjectionFactorNumeric

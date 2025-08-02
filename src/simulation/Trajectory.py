@@ -6,6 +6,15 @@ import numpy as np
 
 
 class SeaStates:
+    calm_att = 0.01 # [deg]
+    calm_pos = 0.001 # [m]
+
+    moderate_att = 3.
+    moderate_pos = 1.
+
+    rough_att = 15.
+    rough_pos = 10.
+
     def __init__(self):
         self.roll_amplitude = 0.1 # [rad]
         self.pitch_amplitude = 0.05 # [rad]
@@ -13,9 +22,11 @@ class SeaStates:
         self.sway_amplitude = 0.2 # [m]
         self.heave_amplitude = 0.3 # [m]
 
-        self.bobbing_frequency = 0.5 # [Hz]
+        self.bobbing_frequency = 0.3 # [Hz]
         self.steps = 100
         self.dt = 0.1
+
+        self.distance = 30
 
     def set_roll_amplitude(self, value, degrees=False) -> None:
         if degrees: value *= np.pi / 180
@@ -40,22 +51,35 @@ class SeaStates:
     def set_dt(self, value) -> None:
         self.dt = value
 
-    @staticmethod
-    def preset_calm() -> 'SeaStates':
+    def set_distance(self, value) -> None:
+        self.distance = value
+
+    @classmethod
+    def preset_calm(clc) -> 'SeaStates':
         settings = SeaStates()
-        settings.set_roll_amplitude(0)
-        settings.set_pitch_amplitude(0)
-        settings.set_sway_amplitude(0)
-        settings.set_heave_amplitude(0)
-        settings.set_bobbing_frequency(0)
+        settings.set_roll_amplitude(clc.calm_att, degrees=True)
+        settings.set_pitch_amplitude(clc.calm_att, degrees=True)
+        settings.set_sway_amplitude(clc.calm_pos)
+        settings.set_heave_amplitude(clc.calm_pos)
         return settings
 
-    @staticmethod
-    def preset_sway() -> 'SeaStates':
+    @classmethod
+    def preset_moderate(clc) -> 'SeaStates':
         settings = SeaStates()
-        settings.set_roll_amplitude(0)
-        settings.set_pitch_amplitude(0)
-        settings.set_heave_amplitude(0)
+        settings.set_roll_amplitude(clc.moderate_att, degrees=True)
+        settings.set_pitch_amplitude(clc.moderate_att, degrees=True)
+        settings.set_sway_amplitude(clc.moderate_pos)
+        settings.set_heave_amplitude(clc.moderate_pos)
+        return settings
+    
+
+    @classmethod
+    def preset_rough(clc) -> 'SeaStates':
+        settings = SeaStates()
+        settings.set_roll_amplitude(clc.rough_att, degrees=True)
+        settings.set_pitch_amplitude(clc.rough_att, degrees=True)
+        settings.set_sway_amplitude(clc.rough_pos)
+        settings.set_heave_amplitude(clc.rough_pos)
         return settings
 
 
@@ -76,7 +100,7 @@ class TrajectoryGenerator:
         
         dt = settings.dt
         circ_factor = 1/2
-        radius = 30
+        radius = settings.distance
         circumference = 2 * np.pi * radius * circ_factor
         total_movement = circumference + radius
 
@@ -86,9 +110,10 @@ class TrajectoryGenerator:
         delta_trans = [step_length, 0, 0]
 
         # ENTRY PART
+        ROLL_180 = Geometry.SE3.from_vector([180, 0, 0, 0, 0, 0], radians=False)
         t = 0
         x0 = Geometry.SE3(Geometry.SO3(), [-radius, -radius, 0])
-        trajectory = [x0]
+        trajectory = [x0.compose(ROLL_180)]
 
         entry_odom = Geometry.SE3(Geometry.SO3(), delta_trans)
         yaw = 0
@@ -107,7 +132,8 @@ class TrajectoryGenerator:
             x = pos[0] + sway * nx
             y = pos[1] + sway * ny
 
-            next_pose = Geometry.SE3.from_vector([roll, pitch, yaw, x, y, z])
+            next_pose = Geometry.SE3.from_vector([roll, pitch, yaw, x, y, z], radians=True)
+            next_pose = next_pose.compose(ROLL_180)
             trajectory.append(next_pose)
             last_base = next_base
         
@@ -136,80 +162,10 @@ class TrajectoryGenerator:
             x = pos[0] + sway * nx
             y = pos[1] + sway * ny
 
-            next_pose = Geometry.SE3.from_vector([roll, pitch, yaw, x, y, z])
+            next_pose = Geometry.SE3.from_vector([roll, pitch, yaw, x, y, z], radians=True)
+            next_pose = next_pose.compose(ROLL_180)
 
             trajectory.append(next_pose)
             last_base = next_base
 
         return trajectory
-
-
-def boat_straight_movement(steps=100) -> list[Geometry.SE3]:
-    trajectory = []
-
-    start_x = -30.0  # match circular motion start
-    start_y = -30.0
-    start_z = 0
-    end_x = 30.0
-    total_distance = end_x - start_x
-    delta_x = total_distance / (steps - 1)  # to include both start and end points
-
-    for i in range(steps):
-        x = start_x + i * delta_x
-        y = start_y
-        z = start_z
-
-        roll = 0.0
-        pitch = 0.0
-        yaw = 0.0
-
-        trajectory.append(Geometry.SE3.from_vector(np.array([roll, pitch, yaw, x, y, z]), radians=False))
-
-    return trajectory
-
-
-    # @classmethod
-    # def circular(clc, w=1.0, steps=100, delta_t=0.1, settings = SeaStates()) -> list[Geometry.SE3]:
-    #     """
-    #     w: turn radius as percentage of full circle
-    #     """
-    #     trajectory = []
-
-    #     radius = 30.0  # meters
-    #     total_yaw = 2 * np.pi * w # [rad]
-    #     delta_yaw = total_yaw / steps
-
-    #     dx = 
-
-    #     for i in range(steps):
-    #         t = i * delta_t
-    #         theta = np.pi / 4 + angular_speed * t
-
-    #         # Base circular position
-    #         base_x = radius * np.cos(theta)
-    #         base_y = radius * np.sin(theta)
-
-    #         # Tangent and normal
-    #         dx = -np.sin(theta)
-    #         dy = np.cos(theta)
-    #         nx = -dy
-    #         ny = dx
-
-    #         # Add lateral sway in normal direction
-    #         sway = sway_amp * np.sin(2 * np.pi * bobbing_freq * t + np.pi / 3)
-    #         x = base_x + sway * nx
-    #         y = base_y + sway * ny
-
-    #         # Z bobbing due to waves
-    #         z = z_amp * np.sin(2 * np.pi * bobbing_freq * t)
-
-    #         # Oscillatory roll and pitch
-    #         roll = roll_amp * np.sin(2 * np.pi * bobbing_freq * t)
-    #         pitch = pitch_amp * np.sin(2 * np.pi * bobbing_freq * t + np.pi / 4)
-
-    #         # Yaw: facing tangent to path
-    #         yaw = theta + np.pi / 2
-
-    #         trajectory.append(Geometry.SE3.from_vector(np.array([roll, pitch, yaw, x, y, z])))
-
-    #     return trajectory

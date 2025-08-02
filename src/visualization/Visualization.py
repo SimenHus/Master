@@ -10,6 +10,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import mpl_toolkits.mplot3d.art3d as art3d
 
+from src.util import Geometry
+
 
 class FactorGraphVisualization:
 
@@ -42,6 +44,149 @@ class FactorGraphVisualization:
     def draw_factor_graph(clc, output_folder: str, graph: NonlinearFactorGraph, values: Values, filename: str = 'factor_graph', exclude_mps = False) -> None:
         s = clc.format_to_graphviz(graph, values, exclude_mps)
         s.render(filename, format='png', cleanup=True, directory=output_folder)
+
+
+class ReportPlot:
+    max_ylim_pos = 8
+    max_ylim_rot = 5
+    def __init__(self, t, Trc, Trc_results, covs):
+        self.Trc = Trc
+        self.Trc_arr = Geometry.SE3.as_vector(Trc, radians=False)
+        self.Trc_results = Trc_results
+        self.Trc_results_arr = np.array([Geometry.SE3.as_vector(pose, radians=False) for pose in Trc_results])
+        self.covs = covs
+        self.t = t
+
+    def se3_error(self):
+        error_list = []
+        for Trc_estim in self.Trc_results:
+            error_local = Geometry.SE3.localCoordinates(self.Trc, Trc_estim)
+            error_world = Geometry.SE3.transform_twist(self.Trc, error_local)
+            error_list.append(error_world)
+        return np.array(error_list)
+    
+    def vector_estim(self):
+        return np.array([Geometry.SE3.as_vector(estim, radians=False) for estim in self.Trc_results])
+    
+
+    def plot_conf2(self, t, conf_pos, conf_rot, xlabel) -> None:
+        covs = self.covs
+        Trc_estims = self.Trc_results
+        pos_arr = []
+        rot_arr = []
+        for (cov, Trc_estim) in zip(covs, Trc_estims):
+
+            if cov is not None: cov = Geometry.SE3.transform_cov(Trc_estim, cov)
+
+            pos = np.sqrt(np.diag(cov[3:, 3:])) if cov is not None else np.array([np.inf]*3)
+            rot = np.sqrt(np.diag(cov[:3, :3])) * 180 / np.pi if cov is not None else np.array([np.inf]*3)
+
+            pos_arr.append(pos)
+            rot_arr.append(rot)
+
+        ci_pos = 1.96 * np.array(pos_arr)
+        ci_rot = 1.96 * np.array(rot_arr)
+
+        pos_labels = ['x', 'y', 'z']
+        rot_labels = ['Roll', 'Pitch', 'Yaw']
+
+        pos_error = self.vector_estim()[:, 3:]
+        rot_error = self.vector_estim()[:, :3]
+        gt = Geometry.SE3.as_vector(self.Trc, radians=False)
+        for i in range(3):
+            pos_ax = conf_pos[i]
+            rot_ax = conf_rot[i]
+
+            pos = pos_error[:, i]
+            pos_ax.plot(t, pos, label=f'Estimated {pos_labels[i]}')
+            pos_ax.fill_between(t, pos - ci_pos[:, i], pos + ci_pos[:, i], alpha=0.2, label='95% CI')
+            pos_ax.axhline(gt[i + 3], color='red', linestyle='--', label='Ground truth')
+            pos_ax.set_ylabel('[m]')
+            pos_ax.set_xlabel(xlabel)
+            pos_ax.legend()
+            pos_ax.grid()
+            pos_ax.set_title(pos_labels[i])
+            pos_ax.set_ylim([gt[i + 3] - self.max_ylim_pos, gt[i + 3] + self.max_ylim_pos])
+
+            rot = rot_error[:, i]
+            rot_ax.plot(t, rot, label=f'Estimated {rot_labels[i]}')
+            rot_ax.fill_between(t, rot - ci_rot[:, i], rot + ci_rot[:, i], alpha=0.2, label='95% CI')
+            rot_ax.axhline(gt[i], color='red', linestyle='--', label='Ground truth')
+            rot_ax.set_ylabel('[deg]')
+            rot_ax.set_xlabel(xlabel)
+            rot_ax.legend()
+            rot_ax.grid()
+            rot_ax.set_title(rot_labels[i])
+            rot_ax.set_ylim([gt[i] - self.max_ylim_rot, gt[i] + self.max_ylim_rot])
+
+    def plot_conf(self, t, conf_pos, conf_rot, xlabel) -> None:
+        covs = self.covs
+        Trc_estims = self.Trc_results
+        pos_arr = []
+        rot_arr = []
+        for (cov, Trc_estim) in zip(covs, Trc_estims):
+
+            if cov is not None: cov = Geometry.SE3.transform_cov(Trc_estim, cov)
+
+            pos = np.sqrt(np.diag(cov[3:, 3:])) if cov is not None else np.array([-1]*3)
+            rot = np.sqrt(np.diag(cov[:3, :3])) * 180 / np.pi if cov is not None else np.array([-1]*3)
+
+            pos_arr.append(pos)
+            rot_arr.append(rot)
+
+        ci_pos = 1.96 * np.array(pos_arr)
+        ci_rot = 1.96 * np.array(rot_arr)
+
+        pos_labels = ['x', 'y', 'z']
+        rot_labels = ['Rot X (~roll)', 'Rot Y (~pitch)', 'Rot Z (~yaw)']
+
+        pos_error = self.se3_error()[:, 3:]
+        rot_error = self.se3_error()[:, :3] * 180 / np.pi
+
+        for i in range(3):
+            pos_ax = conf_pos[i]
+            rot_ax = conf_rot[i]
+
+            pos_ax.plot(t, np.abs(pos_error[:, i]), label=f'Error {pos_labels[i]}')
+            pos_ax.plot(t, ci_pos[:, i], label='95% CI')
+            pos_ax.set_ylabel('[m]')
+            pos_ax.set_xlabel(xlabel)
+            pos_ax.legend()
+            pos_ax.grid()
+            pos_ax.set_title(pos_labels[i])
+            # pos_ax_ylim = pos_ax.get_ylim()[1]
+            # if pos_ax_ylim > self.max_ylim:
+            #     pos_ax_ylim = self.max_ylim
+            # pos_ax.set_ylim([0, pos_ax_ylim])
+
+            rot_ax.plot(t, np.abs(rot_error[:, i]), label=f'Error {rot_labels[i]}')
+            rot_ax.plot(t, ci_rot[:, i], label='95% CI')
+            rot_ax.set_ylabel('[deg]')
+            rot_ax.set_xlabel(xlabel)
+            rot_ax.legend()
+            rot_ax.grid()
+            rot_ax.set_title(rot_labels[i])
+            # rot_ax_ylim = rot_ax.get_ylim()[1]
+            # if rot_ax_ylim > self.max_ylim:
+            #     rot_ax_ylim = self.max_ylim
+            # rot_ax.set_ylim([0, rot_ax_ylim])
+
+
+    def show(self, xlabel):
+        _, ax1 = plt.subplots(2, 3, tight_layout=True)
+        _, ax2 = plt.subplots(2, 3, tight_layout=True)
+        conf_pos, conf_rot = ax1[0, :], ax1[1, :]
+        conf_pos2, conf_rot2 = ax2[0, :], ax2[1, :]
+
+        t = self.t
+        self.plot_conf(t, conf_pos, conf_rot, xlabel)
+        self.plot_conf2(t, conf_pos2, conf_rot2, xlabel)
+        
+        plt.show()
+
+
+
+
 
 
 class PlotVisualization:

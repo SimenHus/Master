@@ -4,11 +4,11 @@ import gtsam.utils.plot as gtsam_plot
 import matplotlib.pyplot as plt
 
 class LiveTrajectory3D:
-    def __init__(self, node_type, delay=0.1):
+    def __init__(self, node_type, delay=0.1, fignum=0):
         self.node_type = node_type
         self.delay = delay
         
-        self.fignum = 0
+        self.fignum = fignum
         plt.ion()
         fig = plt.figure(self.fignum)
         self.ax = fig.add_subplot(projection='3d')

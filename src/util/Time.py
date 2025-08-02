@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+import time
 
 from enum import Enum
 
@@ -66,3 +67,12 @@ class TimeConversion:
             case TimeFormat.POSIX: return clc.POSIX_to_UTC(timestamp)
             case TimeFormat.UTC: return timestamp
             case TimeFormat.STX: return clc.STX_to_UTC(timestamp)
+
+
+class Timer:
+
+    def start(self):
+        self.start_time = time.time()
+
+    def end(self):
+        return time.time() - self.start_time

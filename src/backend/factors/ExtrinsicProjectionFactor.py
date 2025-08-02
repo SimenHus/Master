@@ -1,8 +1,7 @@
 
 from gtsam import CustomFactor
 from gtsam import noiseModel
-
-from gtsam.utils.numerical_derivative import numericalDerivative51, numericalDerivative52, numericalDerivative53
+from gtsam import Pose3
 
 import numpy as np
 
@@ -10,12 +9,6 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from src.structs import Camera
-
-
-def f(Twr, Trc, landmark, camera, measurement):
-    Twc = Twr.compose(Trc)
-    landmark_c = Twc.transformTo(landmark)
-    return camera.project(landmark_c) - measurement
 
 class ExtrinsicProjectionFactor(CustomFactor):
     def __init__(self, ref_key: int, extrinsic_key: int, landmark_key: int, camera: 'Camera', measurement: np.ndarray, noise_model: noiseModel = None) -> None:
@@ -25,16 +18,36 @@ class ExtrinsicProjectionFactor(CustomFactor):
 
 
     def evaluateError(self, _, values, H = None):
-        Twr = values.atPose3(self.keys()[0])
-        Trc = values.atPose3(self.keys()[1])
+        Twr: Pose3 = values.atPose3(self.keys()[0])
+        Trc: Pose3 = values.atPose3(self.keys()[1])
         landmark = values.atPoint3(self.keys()[2])
 
-        error = f(Twr, Trc, landmark, self.camera, self.measurement)
+        H1 = np.zeros((6, 6), dtype=np.float64, order='F')
+        H2 = np.zeros((6, 6), dtype=np.float64, order='F')
+        H3 = np.zeros((3, 6), dtype=np.float64, order='F')
+        H4 = np.zeros((3, 3), dtype=np.float64, order='F')
+
+        Twc = Twr.compose(Trc, H1, H2)
+        landmark_c = Twc.transformTo(landmark, H3, H4)
+        error = self.camera.project(landmark_c) - self.measurement
+
+        fx, fy = self.camera.parameters[:2]
+        X, Y, Z = landmark_c
+        projection_jac = 1 / Z * np.array([
+                [fx, 0, -fx * X / Z],
+                [0, fy, -fy * Y / Z]
+        ], order='F')
+
+        # Correct analytical solution
+        # if H is not None:
+        #     H[0] = projection_jac @ np.block([skew(landmark_c), -np.eye(3)]) @ Trc.inverse().AdjointMap()
+        #     H[1] = projection_jac @ np.block([skew(landmark_c), -np.eye(3)])
+        #     H[2] = projection_jac @ Twc.rotation().matrix().T
         
         if H is not None:
-            H[0] = numericalDerivative51(f, Twr, Trc, landmark, self.camera, self.measurement)
-            H[1] = numericalDerivative52(f, Twr, Trc, landmark, self.camera, self.measurement)
-            H[2] = numericalDerivative53(f, Twr, Trc, landmark, self.camera, self.measurement)
+            H[0] = projection_jac @ H3 @ H1
+            H[1] = projection_jac @ H3 @ H2
+            H[2] = projection_jac @ H4
 
         return error
     

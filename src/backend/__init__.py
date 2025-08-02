@@ -1,2 +1,3 @@
 from .Optimizer import Optimizer, NodeType
-# from .Backend import LoopClosing
+from .BAOptimizer import BAOptimizer
+from .BAOptimizerGN import BAOptimizerGN

@@ -14,7 +14,8 @@ from src.util import Geometry
 from src.structs import Camera
 
 noise_model = noiseModel.Isotropic.Sigma(6, 0.1)
-T_rel = Pose3.Expmap([2.0, 0.0, -1.0, 10, -5, 1])
+# T_rel = Pose3.Expmap([2.0, 0.0, -1.0, 10, -5, 1])
+T_rel = Geometry.SE3.from_vector(np.array([32, -26, 89.1, 3, -2, -5]), radians=False)
 state = Geometry.State(
     velocity=np.array([1, 1, 0]),
     acceleration=np.array([0, 0, 0]),
@@ -83,7 +84,7 @@ def projection():
         noiseModel.mEstimator.Huber.Create(1.345),
         smart_pixel_noise
     )
-    Twr = Pose3()
+    Twr = Geometry.SE3.from_vector(np.array([10, -3, 62.4, 0.2, 1, -2]), radians=False)
     Trc = T_rel
     Twc = Twr.compose(Trc)
     landmark = np.array([20, 10, 1])
@@ -91,7 +92,7 @@ def projection():
     values.insert(0, Twr)
     values.insert(1, Trc)
     values.insert(2, landmark)
-    camera = Camera([50., 50., 50., 50.], [])
+    camera = Camera([100., 100., 50., 50.], [])
     pixels = camera.project(landmark_c)
     custom_factor = ExtrinsicProjectionFactor(0, 1, 2, camera, pixels, generic_pixel_noise)
     return [np.empty((6, 6), order='F'), np.empty((6, 6), order='F'), np.empty((2, 3), order='F')]
@@ -138,6 +139,7 @@ if True:
     numerical1 = numericalDerivative32(f, values.atPose3(0), values.atPose3(1), values.atPoint3(2))
     numerical2 = numericalDerivative33(f, values.atPose3(0), values.atPose3(1), values.atPoint3(2))
     nums = [numerical0, numerical1, numerical2]
+
 elif len(H) == 3:
     numerical0 = numericalDerivative31(f, values.atPose3(0), values.atPose3(1), values.atPose3(2))
     numerical1 = numericalDerivative32(f, values.atPose3(0), values.atPose3(1), values.atPose3(2))

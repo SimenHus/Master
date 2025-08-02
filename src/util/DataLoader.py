@@ -6,7 +6,6 @@ import glob
 import json
 import numpy as np
 
-
 def load_stx_images() -> list[ImageData]:
     img_path = data_path()
     suffix = 'jpg'
@@ -71,8 +70,9 @@ def load_stx_data() -> list[STXData]:
 
     return sorted_list
 
-def load_stx_camera(cam=1, lens=0) -> list[Camera, Geometry.SE3]:
+def load_stx_camera(cam=1) -> list[Camera, Geometry.SE3]:
     data = dataloader()
+    lens = lens_number()
     lens_info = data[f'Cam{cam}'][f'Lens{lens}']
     K_list = lens_info['camera_matrix']
     pos = np.array(lens_info['location'])
@@ -83,21 +83,32 @@ def load_stx_camera(cam=1, lens=0) -> list[Camera, Geometry.SE3]:
     pose = Geometry.SE3.from_vector(vals, radians=False)
     return Camera(params, dist_coeffs), pose
 
+
+
 def config() -> dict:
     return load_json('./config/Config.json')
 
+def dataset() -> dict:
+    return config()[f'dataset_{dataset_number()}']
+
 def dataloader() -> dict:
-    file_path = f'{config()["dir"]["dataloader"]}/dataloader.json'
+    file_path = f'{dataset()["dataloader"]}/dataloader.json'
     return load_json(file_path)
 
+def dataset_number() -> int:
+    return config()['dataset_in_use']
+
 def data_path() -> str:
-    return f'{config()["dir"]["data"]}'
+    return f'{dataset()["data"]}'
+
+def lens_number() -> int:
+    return dataset()["lens"]
+
+def reconstrucion_folder() -> str:
+    return dataset()['reconstruction']
 
 def load_json(path) -> dict:
     with open(path, 'r') as f: return json.load(f)
-
-def COLMAP_project_path() -> dict:
-    return config()['COLMAP']['project_path']
 
 def output_path() -> str:
     return config()['dir']['output']

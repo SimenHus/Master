@@ -1,13 +1,20 @@
 
-from gtsam import LevenbergMarquardtOptimizer, Marginals
-from gtsam import ISAM2Params, ISAM2
-from gtsam import NonlinearFactorGraph, Values, NonlinearFactor
+from gtsam import ISAM2Params, ISAM2, LevenbergMarquardtOptimizer
+from gtsam import NonlinearFactorGraph, Values, Symbol, NonlinearFactor
+from gtsam import SmartProjectionParams
+from gtsam import SmartProjectionPoseFactorCal3_S2
+# from gtsam import SmartProjectionPose3Factor
+from gtsam import GenericProjectionFactorCal3_S2
+from gtsam import Cal3_S2
+from gtsam import DegeneracyMode, LinearizationMode
 from gtsam import BetweenFactorPose3, PriorFactorPose3
 from gtsam import NonlinearEqualityPose3, PriorFactorPoint3
 from gtsam import noiseModel
 from gtsam.symbol_shorthand import X, T, C, V, L
+from gtsam import triangulatePoint3
 
 
+import cv2
 from dataclasses import dataclass
 from .factors import BetweenFactorCamera, ReferenceAnchor, VelocityExtrinsicFactor, VelocityFactor, HandEyeFactor, ExtrinsicProjectionFactor
 from src.util import Geometry
@@ -56,15 +63,14 @@ class FactorDatabase:
         self.map_point_observations: dict[str: list] = {} # Identifier: [pixels, pose_id]
         self.master_graph = NonlinearFactorGraph() # Factor graph containing all used factors (should be equal to isam fg)
         self.removal_indeces = []
-        self.factors_to_add = NonlinearFactorGraph()
 
     def add_pending(self, identifier: str, factor: NonlinearFactor) -> None:
         self.db.add(Factor(identifier, Status.PENDING, factor))
  
     def prepare_update(self) -> tuple[NonlinearFactorGraph, list]:
         next_index = self.master_graph.size() # Reset next index counter
-        fg = self.factors_to_add # Prepare factor graph containing pending factors
-
+        fg = NonlinearFactorGraph() # Prepare factor graph containing pending factors
+        
         for fac in self.db:
             if fac.status != Status.PENDING: continue
 
@@ -96,10 +102,6 @@ class FactorDatabase:
     def finish_update(self) -> None:
         for index in self.removal_indeces: self.master_graph.remove(index) # Remove old factors from master graph
         self.removal_indeces.clear()
-        self.factors_to_add.resize(0)
-
-    def update_failed(self) -> None:
-        pass
 
     def observations(self, identifier: str) -> list[tuple, int]:
         if identifier not in self.map_point_observations: return []
@@ -123,10 +125,13 @@ class FactorDatabase:
 class Optimizer:
     def __init__(self, relin_skip = None, relin_thres = None) -> None:
         self.factor_db = FactorDatabase()
-        self.nodes_master = Values()
         self.new_nodes = Values()
 
-        self.smart_pixel_noise = noiseModel.Isotropic.Sigma(2, 1.0) # Pixel std deviation in u and v
+        self.smart_params = SmartProjectionParams()
+        self.smart_params.setDegeneracyMode(DegeneracyMode.ZERO_ON_DEGENERACY)
+        self.smart_params.setLinearizationMode(LinearizationMode.HESSIAN)
+
+        self.smart_pixel_noise = noiseModel.Isotropic.Sigma(2, 1.5) # Pixel std deviation in u and v
         self.generic_pixel_noise = noiseModel.Robust.Create(
             noiseModel.mEstimator.Huber.Create(1.345),
             self.smart_pixel_noise
@@ -143,12 +148,7 @@ class Optimizer:
         self.factor_db.add_pending(identifier, factor) # Add factor as pending to database
 
     def add_node(self, value: 'Geometry', id: int, node_type: NodeType) -> None:
-        # Skip adding landmark if this is the first time it is seen
-        if node_type == NodeType.LANDMARK:
-            if len(self.factor_db.observations(f'MapPoint{id}')) == 0: return
-
         self.new_nodes.insert(node_type(id), value)
-        self.nodes_master.insert(node_type(id), value)
 
     def add_between_factor(self, pose_from: int, pose_to: int, node_type: NodeType, measurement: 'Geometry.SE3', sigmas: list) -> None:
         noise_model = noiseModel.Diagonal.Sigmas(sigmas)
@@ -191,18 +191,17 @@ class Optimizer:
         self._add_factor(HandEyeFactor(from_key, to_key, extr_key, state_from, state_to, noise_model), f'HandEye{from_key}-{to_key}-{extr_key}')
 
 
-    def add_extrinsic_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera') -> None:
+    def add_extrinsic_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', delay=2) -> None:
         landmark = f'MapPoint{map_point_id}'
         new_observation = self.factor_db.add_map_point_observation(landmark, pixels, pose_id)
         if not new_observation: return
 
         observations = self.factor_db.observations(landmark)
-        delay = 2
         if len(observations) < delay: return # Need x or more observations before adding to FG
 
         identifier = f'{landmark}-{NodeType.REFERENCE(pose_id)}'
 
-        if len(observations) >= delay:
+        if len(observations) > delay:
             factor = ExtrinsicProjectionFactor(NodeType.REFERENCE(pose_id), NodeType.EXTRINSIC(camera.id), NodeType.LANDMARK(map_point_id),
                                                camera, pixels, self.generic_pixel_noise)
             self._add_factor(factor, identifier)
@@ -214,33 +213,68 @@ class Optimizer:
                 self._add_factor(factor, identifier)
 
 
+    def add_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, node_type: NodeType, camera: 'Camera', Trc = None) -> None:
+        landmark = f'MapPoint{map_point_id}'
+        new_observation = self.factor_db.add_map_point_observation(landmark, pixels, pose_id)
+        if not new_observation: return
+
+        observations = self.factor_db.observations(landmark)
+        x = 2
+        if len(observations) < x: return # Need x or more observations before adding to FG
+        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
+
+        K = Cal3_S2(*camera.parameters_with_skew)
+        identifier = f'{landmark}-{node_type(pose_id)}'
+        if len(observations) > x:
+            factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, node_type(pose_id), L(map_point_id), K, Trc)
+            self._add_factor(factor, identifier)
+        else:
+            for (pixels, pose_id) in observations:
+                identifier = f'{landmark}-{node_type(pose_id)}'
+                factor = GenericProjectionFactorCal3_S2(pixels, self.generic_pixel_noise, node_type(pose_id), L(map_point_id), K, Trc)
+                self._add_factor(factor, identifier)
+
+
+    def add_smart_projection_factor(self, map_point_id: int, pixels: tuple, pose_id: int, camera: 'Camera', Trc = None) -> None:
+        identifier = f'MapPoint{map_point_id}'
+
+        # if len(self.factor_db.observations(identifier)) > 50: return
+        is_new_observation = self.factor_db.add_map_point_observation(identifier, pixels, pose_id) # Include pixel observation in factor DB
+        if not is_new_observation: return
+
+        observations = self.factor_db.observations(identifier) # Get observations from factor DB
+        if Trc is None: Trc = Geometry.SE3.NED_to_RDF_map()
+
+        K = Cal3_S2(*camera.parameters_with_skew)
+        factor = SmartProjectionPoseFactorCal3_S2(self.smart_pixel_noise, K, Trc, self.smart_params)
+        # factor = SmartProjectionPose3Factor(self.smart_pixel_noise, K, Trc, self.smart_params)
+        for (kp, pose_id) in observations: factor.add(kp, C(pose_id)) # Add all observations to the factor
+        
+        # If factor already exists, remove/mark for removal
+        if identifier in self.factor_db: self.factor_db.remove(identifier)
+
+        # Add factor to factor graph
+        self._add_factor(factor, identifier)
+
     def optimize(self, extra_updates: int = 0) -> None:
         new_factors, removal_indeces = self.factor_db.prepare_update()
-
-        if len(removal_indeces) > 0:
-            print(len(removal_indeces))
-            exit()
         
         # Perform incremental update to iSAM, and remove/readd nodes to be updated
         try:
             self.isam.update(new_factors, self.new_nodes, removal_indeces)
-            self.factor_db.finish_update() # Mark factor update as complete
-        except Exception as e:
-            print(f'iSAM Update failed!!! {e}')
-            self.factor_db.update_failed()
-        self.new_nodes.clear() # Clear list of new nodes, since they are now added
-
-        try:
             for _ in range(extra_updates): self.isam.update() # Perform extra updates
         except Exception as e:
-            print(f'ISAM extra updates failed {e}')
+            print(f'iSAM Update failed!!! {e}')
+
+        self.new_nodes.clear() # Clear list of new nodes, since they are now added
+        self.factor_db.finish_update() # Mark factor update as complete
 
     def get_node_estimate(self, id: int, node_type: NodeType) -> 'Geometry':
         key = node_type(id)
         values = None
         if self.new_nodes.exists(key): values = self.new_nodes
         if self.current_estimate.exists(key): values = self.current_estimate
-        if values is None: return None
+        if values is None: return values
 
         match node_type:
             case NodeType.CAMERA: estimate = values.atPose3(key)
@@ -255,11 +289,3 @@ class Optimizer:
     @property
     def current_estimate(self) -> Values:
         return self.isam.calculateBestEstimate()
-
-    def bundle_adjustment(self) -> Values:
-        result = LevenbergMarquardtOptimizer(self.factor_db.master_graph, self.nodes_master).optimize()
-        return result
-    
-    @staticmethod
-    def marginals(graph: NonlinearFactorGraph, result: Values) -> Marginals:
-        return Marginals(graph, result)
